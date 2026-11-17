@@ -1,0 +1,10 @@
+{
+  // Editor and type-check config for the tests. They run with "tsx --test",
+  // which doesn't type-check, and are never compiled into dist/.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true
+  },
+  "include": ["./**/*.ts", "../src"]
+}

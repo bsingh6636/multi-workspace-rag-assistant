@@ -28,8 +28,9 @@ export default function App() {
     <>
       {/* key: remount the dashboard (fresh state) when a different user signs in. */}
       {session ? <Dashboard key={session.user.id} user={session.user} /> : <AuthForm />}
-      {/* Toast notifications for the whole app (call toast.success / toast.error anywhere). */}
-      <Toaster theme="system" position="bottom-right" closeButton />
+      {/* Toast notifications for the whole app (call toast.success / toast.error / toast.info anywhere).
+          Top right, just under the 64px header. richColors: success green, error red, info blue, warning yellow. */}
+      <Toaster theme="system" position="top-right" offset={{ top: 76, right: 16 }} richColors closeButton />
     </>
   )
 }

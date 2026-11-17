@@ -106,18 +106,28 @@ $$;
 
 - `k = 5`, with `SIMILARITY_THRESHOLD` defaulting to `0.5`. Tune it on the seed docs and write down the chosen value.
 - The threshold **filters** chunks after retrieval. It never decides whether the LLM gets called (see §4).
-- Embedding task types: `RETRIEVAL_DOCUMENT` for chunks and `RETRIEVAL_QUERY` for questions (if the model supports them). Set `outputDimensionality: 768`.
+- Embedding model: `gemini-embedding-001` (`GEMINI_EMBED_MODEL`) with `outputDimensionality: 768`. A real request on 2026-11-18 returned 768 values. `gemini-embedding-2` also works and is kept as an option.
+- Embedding task types: `RETRIEVAL_DOCUMENT` for chunks and `RETRIEVAL_QUERY` for questions. Chunks and queries **must** use the same model and dimension. Changing the model means re-embedding every chunk.
+- Truncated (non-3072) outputs of `gemini-embedding-001` are not unit-normalized. Normalize each vector to length 1 before storing and querying, so cosine scores and the threshold behave consistently.
 
 ## 3. Ingestion
 
-1. multer memory storage, 5 MB limit, extensions `.txt`, `.md` and `.pdf` only.
-2. Extract text: pdf-parse for PDFs, `buffer.toString('utf8')` for the rest. Reject text that comes out empty (for example a scanned PDF).
-3. Normalize whitespace, then compute `sha256(text)`.
-4. Look up `(workspace_id, content_hash)`. If a document exists, return `{ document, duplicate: true }` and stop. The unique constraint backs this up if two uploads race.
-5. Insert the document with `status='processing'`.
-6. Chunk: split on markdown headings, then blank lines, then pack paragraphs into chunks of up to about 800 characters with about 150 characters of overlap. Track the current heading as `section`. For PDFs, use the page if it's available, otherwise the heading or `null`.
-7. Embed in batches of about 20 and insert the chunks with `workspace_id`.
-8. Update the document to `status='ready', chunk_count=n`. On any error, set `status='failed', error=msg` and delete any partial chunks.
+1. multer memory storage, 5 MB limit, one file in field `file`, extensions `.txt`, `.md` and `.pdf` only. Filenames are re-decoded as UTF-8 (multer reads them as latin1).
+2. Extract text: pdf-parse v2 for PDFs (text per page), `buffer.toString('utf8')` for the rest.
+3. Normalize: `\r\n` → `\n`, drop the BOM and NUL bytes (Postgres text can't hold NUL), trim line ends, collapse 3+ blank lines. Empty after that (for example a scanned PDF) → 400. Then compute `sha256(text)`.
+4. Chunk (before any DB write, so a bad file leaves no trace). More than **300 chunks** (about 200 KB of text) → 400, because embedding runs inside the request and the free tier is rate-limited.
+5. Look up `(workspace_id, content_hash)`:
+   - `ready` or `processing` → return `{ document, duplicate: true }` and stop.
+   - `failed` → delete that row and carry on, so a document that failed once (for example during a Gemini outage) can be uploaded again.
+   - The unique constraint backs this up if two uploads race; the loser returns the winner as a duplicate.
+6. Insert the document with `status='processing'`.
+7. Embed in batches of 20 (`RETRIEVAL_DOCUMENT`, normalized to length 1) and insert each batch's chunk rows with `workspace_id`.
+8. Update the document to `status='ready', chunk_count=n`. On any error, delete its chunks and set `status='failed', error=<short message>`.
+
+**Chunker** (`services/chunker.ts`, unit-tested in `server/test/chunker.test.ts`):
+- Markdown/text is split into sections at heading lines (`#` to `######`). Headings with nothing between them form one section named after the last one. The heading line stays in the chunk text, so its words are embedded too. `section` = the heading text.
+- Each section is cut into windows of **at most 800 characters**. A window ends at the last paragraph break in its second half, else line break, else sentence end, else space. The next window starts **~150 characters** earlier, at a word start, so a fact that crosses a cut appears whole in at least one chunk. A new section always starts a fresh chunk, so labels stay accurate.
+- PDFs have no reliable headings, so each page is cut the same way with `section = "page N"`.
 
 The upload is processed inside the request, since files are small. If time allows, return early and process afterwards, with the client polling the status.
 
@@ -210,13 +220,27 @@ for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
 ```
 
 - `ctx.workspaceId` comes from the server. Tool schemas don't even have a `workspace_id` field.
+- **Dates:** in a real test the model called `save_task` with `due_date: "tomorrow"`. The tool declaration says `due_date` is `YYYY-MM-DD`, and the system prompt includes `Today is <YYYY-MM-DD>`, so the model can resolve relative dates itself. zod still rejects anything that isn't ISO, and that error goes back to the model to self-correct.
 - The Discord webhook URL is read from env and never echoed in results or logs.
 - There is no separate "does this need a tool?" LLM call. Tools are sent with the normal request.
 - The loop runs whether or not any chunks were kept. `toolCalled` is true once any tool executes successfully in this turn.
 
 ## 6. Failure handling
 
-- Gemini 429 or 5xx: retry up to 3 times with backoff of 1s, 2s and 4s.
+- **Models** (tested with one real request each on 2026-11-18, since the AI Studio list mixes free and paid models):
+
+  | Model | Result | Use |
+  |---|---|---|
+  | `gemini-3.6-flash` | called `save_task` correctly | **chat (primary)** |
+  | `gemini-3.5-flash-lite` | called the tool correctly | **chat fallback** |
+  | `gemini-3.8-flash` | 503 "high demand" | no, often overloaded |
+  | `gemini-4-hydrogen` | 503 three times, then a hung request | no |
+  | `gemini-2.5-flash` | 404 "no longer available to new users" | no |
+  | `gemini-embedding-001` | 768 values | **embeddings** |
+
+  A reliable model beats a newer one that's overloaded, because graders test at random times.
+- Gemini 429 or 5xx (including 503 "high demand"): retry up to 3 times with backoff of 1s, 2s and 4s, then make one attempt on `GEMINI_CHAT_FALLBACK_MODEL`. Only after that does the assistant message become `failed`.
+- Set a per-request timeout of about 30s on every Gemini call, because a hung request was seen in testing. A timeout counts as a retryable error.
 - An LLM failure never loses the user's message, because it is saved first. The assistant row is marked `failed` and the client shows Retry, which re-runs the same question.
 - Ingestion failure: the document is marked `failed` with the error, and partial chunks are removed.
 - Every route is wrapped in try/catch, followed by a JSON error. Stack traces and env values are never returned to the client.

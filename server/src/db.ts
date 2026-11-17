@@ -14,5 +14,20 @@ export type Workspace = {
   created_at: string;
 };
 
+export type DocumentStatus = 'processing' | 'ready' | 'failed';
+
+export type DocumentRow = {
+  id: string;
+  workspace_id: string;
+  filename: string;
+  status: DocumentStatus;
+  error: string | null;
+  chunk_count: number;
+  created_at: string;
+};
+
+// Columns returned to the client for a document (content_hash stays server-side).
+export const DOCUMENT_COLUMNS = 'id, workspace_id, filename, status, error, chunk_count, created_at';
+
 // Postgres error code for a UNIQUE constraint violation.
 export const UNIQUE_VIOLATION = '23505';

@@ -6,6 +6,7 @@ import {
   renameWorkspace,
 } from '../controllers/workspace.controller';
 import { loadWorkspace } from '../middleware/workspace';
+import documentRoutes from './document.routes';
 
 // Mounted at /api/workspaces. Paths only; the handlers live in the controller.
 const router = Router();
@@ -20,5 +21,7 @@ router.use('/:wsId', loadWorkspace);
 
 router.patch('/:wsId', renameWorkspace);
 router.delete('/:wsId', deleteWorkspace);
+
+router.use('/:wsId/documents', documentRoutes);
 
 export default router;

@@ -14,12 +14,12 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 - [x] Scaffold `/server` (Express + TS, `GET /health`) and `/client` (Vite React TS)
 - [x] Express serves `client/dist` with a catch-all to `index.html`
 - [x] `.env.example` with no real values
-- [ ] Get a Gemini key from AI Studio and check the current free chat and embedding model names
+- [x] Get a Gemini key from AI Studio and check the current free chat and embedding model names. Chosen: `gemini-3.6-flash` (chat), `gemini-3.5-flash-lite` (fallback), `gemini-embedding-001` (768). See DESIGN.md §6
 
 **Done when:** locally, the React page loads, `/health` returns 200, and the 8 tables exist in Supabase. (Deployment moved to Part 8.)
 
 ## Part 1: Auth + workspaces (~1.5h)
-- [ ] Client: Supabase email/password sign-up and login plus Continue with Google, with the session stored by supabase-js
+- [ ] Client: Supabase email/password sign-up and login, with the session stored by supabase-js
 - [ ] Server `middleware/auth.ts`: verify the Bearer JWT, then set `req.user`
 - [ ] Server `middleware/workspace.ts`: `requireWorkspace(userId, wsId)` returns 404 if the user isn't the owner
 - [ ] On first login, create a `profiles` row and a "Default" workspace if none exists
@@ -29,13 +29,13 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 **Done when:** you can sign up, see "Default", create workspace B, switch, reload and stay on B. Another user's workspace id returns 404.
 
 ## Part 2: Ingestion (~2h)
-- [ ] `POST /api/workspaces/:wsId/documents` (multer, memory storage, accepts `.txt`, `.md`, `.pdf`, 5 MB limit)
-- [ ] Extract text (pdf-parse for PDF, utf-8 for the others)
-- [ ] SHA-256 of the text, then look up `(workspace_id, content_hash)`. If it exists, return the existing document with `duplicate: true`
-- [ ] Chunk to about 800 characters with about 150 overlap, splitting on headings and paragraphs first. Keep the nearest heading as `section`
-- [ ] Embed in batches, retrying with backoff on 429. Insert chunks **with workspace_id**
-- [ ] Document `status`: processing → ready (`chunk_count`) / failed (`error`)
-- [ ] `GET` list and `DELETE /documents/:id` (chunks cascade)
+- [x] `POST /api/workspaces/:wsId/documents` (multer, memory storage, accepts `.txt`, `.md`, `.pdf`, 5 MB limit)
+- [x] Extract text (pdf-parse for PDF, utf-8 for the others)
+- [x] SHA-256 of the text, then look up `(workspace_id, content_hash)`. If it exists, return the existing document with `duplicate: true`
+- [x] Chunk to about 800 characters with about 150 overlap, splitting on headings and paragraphs first. Keep the nearest heading as `section`
+- [x] Embed in batches, retrying with backoff on 429. Insert chunks **with workspace_id**
+- [x] Document `status`: processing → ready (`chunk_count`) / failed (`error`)
+- [x] `GET` list and `DELETE /documents/:id` (chunks cascade)
 - [ ] Client: upload form and document list with status
 
 **Done when:** you can upload 2 docs, the chunk rows appear with the right `workspace_id`, and re-uploading the same file adds no chunks.

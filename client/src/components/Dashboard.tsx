@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { deleteRequest, errorMessage, getRequest, patchRequest, postRequest } from '../lib/http'
 import type { Profile, Workspace } from '../types'
 import DeleteWorkspaceDialog from './DeleteWorkspaceDialog'
+import DocumentsPanel from './DocumentsPanel'
 import UserMenu from './UserMenu'
 import WorkspaceMenu from './WorkspaceMenu'
 import WorkspaceNameDialog from './WorkspaceNameDialog'
@@ -140,11 +141,8 @@ export default function Dashboard({ user }: { user: User }) {
               />
             </div>
 
-            <section className="blankslate box">
-              <h2>Nothing here yet</h2>
-              <p className="muted">Documents, chat, tasks and the tool-call log for this workspace will appear here.</p>
-              <code className="muted">workspace id: {active.id}</code>
-            </section>
+            {/* key: a new workspace gets a fresh panel, so the old list never flashes. */}
+            <DocumentsPanel key={active.id} workspaceId={active.id} />
           </>
         )}
       </main>

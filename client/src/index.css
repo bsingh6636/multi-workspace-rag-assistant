@@ -35,6 +35,11 @@
   --btn-primary-border: #1f232826;
   --btn-danger-hover: #a40e26;
   --btn-danger-fg-hover: #ffffff;
+
+  --success: #1a7f37;
+  --success-border: #1a7f37;
+  --attention: #9a6700;
+  --attention-border: #9a6700;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -69,6 +74,11 @@
     --btn-primary-border: #f0f6fc1a;
     --btn-danger-hover: #b62324;
     --btn-danger-fg-hover: #ffffff;
+
+    --success: #3fb950;
+    --success-border: #238636;
+    --attention: #d29922;
+    --attention-border: #9e6a03;
   }
 }
 
@@ -652,6 +662,144 @@ button {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ---------- Panels (Primer "Box" with header and rows) ---------- */
+
+.panel {
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.dropzone-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+}
+
+.box-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.box-flash {
+  margin: 16px;
+}
+
+.box-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.box-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-muted);
+}
+
+.box-list .box-row:first-child {
+  border-top: 0;
+}
+
+.blankslate h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.blankslate > svg {
+  color: var(--fg-muted);
+}
+
+.counter {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  text-align: center;
+  background: var(--hover);
+  border-radius: 2em;
+}
+
+.label {
+  flex-shrink: 0;
+  padding: 0 7px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  border: 1px solid;
+  border-radius: 2em;
+}
+
+.label-success {
+  color: var(--success);
+  border-color: var(--success-border);
+}
+
+.label-attention {
+  color: var(--attention);
+  border-color: var(--attention-border);
+}
+
+.label-danger {
+  color: var(--danger);
+  border-color: var(--danger-border);
+}
+
+.spinner-sm {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.doc-icon {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+}
+
+.doc-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.doc-name {
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.doc-meta {
+  font-size: 12px;
+}
+
+.doc-error {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.btn-octicon-danger:hover:not(:disabled) {
+  color: var(--danger);
 }
 
 /* ---------- Auth screen, laid out like GitHub's login ---------- */

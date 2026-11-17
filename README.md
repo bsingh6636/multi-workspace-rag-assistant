@@ -11,7 +11,7 @@ A multi-workspace RAG assistant. Each user owns one or more **workspaces**. Each
 
 ## Features
 
-- **Auth:** email and password or Google login through Supabase Auth. A "Default" workspace is created on signup.
+- **Auth:** email and password login through Supabase Auth. A "Default" workspace is created on signup.
 - **Workspaces:** create, rename, delete and switch. The last active workspace is remembered per user. A user always keeps at least one workspace, so the last one can't be deleted.
 - **Document ingestion:** `.txt`, `.md` and text-based `.pdf` files. Uploads are deduplicated by SHA-256 hash, then chunked, embedded and stored with `workspace_id` on every chunk.
 - **Scoped RAG chat:** vector search is filtered by workspace inside the SQL query. Answers include citations (file and section), and a citation check in code makes the assistant say "I don't know" whenever an answer isn't backed by this workspace's documents.
@@ -156,12 +156,13 @@ This is the core guarantee of the app.
 ### Ingestion pipeline
 
 ```
-upload → SHA-256 hash → (workspace_id, hash) exists? → skip
-       → extract text (txt / md / pdf-parse)
-       → chunk (~800 chars, ~150 overlap, split on headings/paragraphs first)
-       → embed in batches (retry with backoff on 429)
+upload (.txt/.md/.pdf, ≤ 5 MB)
+       → extract text (utf-8, or pdf-parse per page) → normalize → SHA-256
+       → chunk (sections by heading, ≤ 800 chars, ~150 overlap; PDFs by page)
+       → (workspace_id, hash) exists? → return it as a duplicate (a failed one is retried)
+       → embed in batches of 20 (retry with backoff on 429/5xx, normalize to length 1)
        → insert chunks with workspace_id
-       → document.status = ready | failed (+ error)
+       → document.status = ready | failed (+ error, partial chunks removed)
 ```
 
 **Why ~800 characters with ~150 overlap:** chunks are small enough that each one covers a single idea, so similarity scores stay sharp. They are large enough to keep a paragraph's context together. The overlap means a fact that crosses a chunk boundary still appears whole in at least one chunk.
@@ -232,8 +233,6 @@ Then run `sql/schema.sql` and `sql/match_chunks.sql`.
 
 In **Authentication → Sign In / Providers → Email**, turn off **Confirm email** so new accounts can sign in straight away.
 
-For **Continue with Google**, enable **Authentication → Sign In / Providers → Google** with an OAuth client ID and secret from Google Cloud (authorized redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback`). Then add `http://localhost:5173` and the deployed URL under **Authentication → URL Configuration → Redirect URLs**. Until this is set up, the button shows Supabase's "provider is not enabled" error.
-
 ### 2. Environment
 
 Copy `.env.example` to `.env` in `/server`, and the client values to `/client/.env`:
@@ -244,8 +243,9 @@ PORT=3000
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=       # server only, never sent to the client
 GEMINI_API_KEY=
-GEMINI_CHAT_MODEL=               # check current free model names in AI Studio
-GEMINI_EMBED_MODEL=              # output dimensionality must be 768
+GEMINI_CHAT_MODEL=gemini-3.6-flash
+GEMINI_CHAT_FALLBACK_MODEL=gemini-3.5-flash-lite   # used when the primary is rate-limited or overloaded
+GEMINI_EMBED_MODEL=gemini-embedding-001          # called with outputDimensionality 768
 DISCORD_WEBHOOK_URL=
 SIMILARITY_THRESHOLD=0.5
 MAX_TOOL_ITERATIONS=3
