@@ -1,0 +1,16 @@
+# Private reference material - never commit
+_private/
+
+# Dependencies / builds
+node_modules/
+dist/
+build/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs / OS
+*.log
+.DS_Store
