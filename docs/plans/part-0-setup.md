@@ -1,5 +1,7 @@
 # Part 0 plan: Setup
 
+> **Note (2026-11-18):** hosting later moved from Render to AWS with Docker, and the deploy and cron steps below were dropped. See `AI_CHANGE_LOG.md`. The rest of this plan is kept as written.
+
 Goal: a deployable skeleton. The Render URL shows the React page, `/health` returns 200, and the database schema is in place for Part 1.
 
 Checklist lives in `PLAN.md`. This file holds the detail.

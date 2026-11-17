@@ -73,3 +73,53 @@ Entry format:
 - **Files:** `.gitignore`
 - **What:** Added `user-later.md` to `.gitignore` and unstaged it. The file itself is unchanged.
 - **Why:** The file holds the user's personal study notes. The user chose to keep it local so it doesn't appear in the graded commit history.
+
+## 2026-11-18 02:24 IST: Part 1 plan: auth and workspaces
+- **Files:** `docs/plans/part-1-auth-workspaces.md` (new)
+- **What:** Wrote the detailed Part 1 plan: server config validation, Supabase admin client, `requireAuth` and workspace-ownership middleware, the `/api/me` bootstrap (profile plus "Default" workspace), workspace CRUD routes, and the client's login form, API helper and workspace switcher. It also lists the manual Supabase setting ("Confirm email" off) and the test steps.
+- **Why:** Part 1 of `PLAN.md`, following the plan-file-first workflow.
+
+## 2026-11-18 02:27 IST: Part 1 code: auth middleware, workspace routes, login and switcher
+- **Files:** `server/src/{config,db,index}.ts`, `server/src/types/express.d.ts`, `server/src/middleware/{auth,workspace}.ts`, `server/src/routes/{me,workspaces}.ts`, `server/package.json`, `client/src/lib/{supabase,api}.ts`, `client/src/types.ts`, `client/src/components/{AuthForm,Dashboard,WorkspaceSwitcher}.tsx`, `client/src/App.tsx`, `client/src/index.css`, `client/package.json`
+- **What:** Server: env validation, service-role Supabase client, Bearer JWT check, `requireWorkspace` ownership middleware (404 when not the owner), `/api/me` bootstrap of the profile and "Default" workspace, and workspace create/rename/delete. Client: email/password auth, an API helper that attaches the JWT, and a workspace switcher that restores `last_workspace_id`.
+- **Why:** Part 1 of `PLAN.md`. Details are in `docs/plans/part-1-auth-workspaces.md`.
+
+## 2026-11-18 02:40 IST: README: GET /api/me bootstrap, last-workspace rule, Confirm email setting
+- **Files:** `README.md`
+- **What:** API table now lists `GET /api/me` (creates the profile and "Default" workspace on first call). Features mention that a user's last workspace can't be deleted. Local setup says to turn off "Confirm email" in Supabase Auth.
+- **Why:** Part 1 added these behaviours; the README has to match the code (CLAUDE.md workflow step 4).
+
+## 2026-11-18 02:58 IST: Center and restyle the sign-in screen
+- **Files:** `client/src/components/AuthForm.tsx`, `client/src/index.css`
+- **What:** The auth screen gets its own full-height layout that centers the form on both axes, with a small app mark and a one-line subtitle above it. The submit button becomes a filled primary button. Inputs get a visible focus ring and smooth hover/focus transitions. The sign-in/sign-up switch moves into a separate box under the card. New styles are scoped under `.auth` and `button.primary`, so the dashboard is unchanged apart from the shared input focus ring.
+- **Why:** The user flagged the login panel as badly placed: it was a 360px `.stack` inside the 880px `<main>`, so it sat at the top-left of the page instead of in the center, and the submit button looked the same as every other button.
+
+## 2026-11-18 03:19 IST: Sign-in screen follows GitHub's layout, adds Continue with Google
+- **Files:** `client/src/components/AuthForm.tsx`, `client/src/index.css`, `README.md`, `PLAN.md`
+- **What:** The sign-in screen now follows GitHub's login layout. Content starts near the top instead of being centered vertically. There is a 48px mark, a title with no subtitle, bold labels, 40px inputs and button, and a 352px input column. The form keeps its bordered box. An "or" divider and a "Continue with Google" button (Supabase `signInWithOAuth`) sit under the submit button. "New to Workspace Assistant? Create an account" becomes a plain line under the box. README and PLAN mention Google sign-in and the Supabase provider setup it needs.
+- **Why:** The user compared the screen with GitHub's login and asked for the same position and sizing, with the box kept around the form and the divider and "Continue with Google" button added.
+
+## 2026-11-18 03:31 IST: Hosting moves from Render to AWS with Docker
+- **Files:** `CLAUDE.md`, `PLAN.md`, `README.md`, `package.json`, `.env.example`, `docs/plans/part-0-setup.md`, `server/src/index.ts` (comment only)
+- **What:** Replaced Render as the host with AWS running one Docker container. Removed the Render deploy and cron-job.org keep-alive steps from Part 0. Added a Dockerfile and AWS deploy step to Part 8. Changed the README hosting row, the live-demo note and the Deployment section to match, and changed the per-part test step from "live URL" to "locally". The Part 0 plan file keeps its original text, with a note at the top.
+- **Why:** The user decided to deploy on AWS at the end. There isn't time to learn Render as well, and the recruiter said deployment can be skipped for now. The brief's "no credit card" rule conflicts with AWS, because an AWS account needs a card. The user knows about this conflict and accepted it.
+
+## 2026-11-18 03:32 IST: ⚠ AI mistake: fix a line-number edit in server/src/index.ts
+- **Files:** `server/src/index.ts`
+- **What:** Restored the blank line before the `/health` comment and removed the old "Keep-alive target for the cron ping" line, so only the new "Health check for the container" comment is left.
+- **Why:** The previous entry changed the comment with `sed '14s…'`, which targets a line *number*. Between reading the file and editing it, the file had moved down one line (another session was editing it), so the edit replaced the blank line 14 and left the old comment in place. This was noticed by grepping for leftover "cron" text afterwards. No code was lost. Fixed with an exact-text edit, and `tsc --noEmit` passes. Lesson: use exact-text edits, not line-number edits, on files that may be changing.
+
+## 2026-11-18 03:35 IST: Point the Supabase MCP at the app's project and allow writes
+- **Files:** `.mcp.json`
+- **What:** Changed `project_ref` from `gfofdnkmpamisiligudz` to `hwrbhadkmooangthpgjv` (the project in `server/.env`) and removed `read_only=true`.
+- **Why:** The MCP pointed at a different Supabase project, so it could never have seen the app's tables. The user chose to allow writes so the AI can create the schema with `apply_migration`, which Supabase records as a tracked migration. The user can turn read-only back on after setup.
+
+## 2026-11-18 03:36 IST: Apply the schema to Supabase through the MCP
+- **Files:** none in the repo (database only). Then `PLAN.md` ticks.
+- **What:** Applied `sql/schema.sql` as migration `init_schema` and `sql/match_chunks.sql` as migration `match_chunks` to project `hwrbhadkmooangthpgjv`, using the Supabase MCP `apply_migration` tool. The files ran exactly as they are in git. Before applying, the project had no tables and no migrations.
+- **Why:** Login failed with "Could not find the table 'public.profiles'" because the schema had never been run. Using `apply_migration` instead of pasting into the SQL Editor means Supabase records both steps as tracked migrations.
+
+## 2026-11-18 03:55 IST: Split server into routes + controllers, axios client helpers, GitHub-style dialogs, switcher and toasts
+- **Files:** `server/src/index.ts`, `server/src/routes/*`, `server/src/controllers/*` (new), `server/src/lib/httpError.ts` (new), `server/src/middleware/error.ts` (new), `server/src/middleware/workspace.ts`, `client/package.json`, `client/src/lib/http.ts` (replaces `lib/api.ts`), `client/src/components/*`, `client/src/index.css`, `README.md`, `CLAUDE.md`, `docs/DESIGN.md`, `docs/plans/part-1-auth-workspaces.md`
+- **What:** Server: each resource now has a `routes/<name>.routes.ts` file (paths and middleware only, a plain `router` variable) and a `controllers/<name>.controller.ts` file (the handlers). `routes/index.ts` builds one `apiRouter` that runs `requireAuth` once and mounts the resource routers; `index.ts` just does `app.use('/api', apiRouter)`. `/api/me` + `meRouter` is renamed to `/api/profile` + profile routes, because it reads and updates the `profiles` row. Controllers throw `HttpError(status, message)` and zod errors instead of building error responses by hand; one error middleware turns `HttpError` → its status, `ZodError` → 400, Postgres `23505` → 409, anything else → 500. Client: `lib/http.ts` wraps axios with `getRequest/postRequest/patchRequest/deleteRequest`, an interceptor that adds the Bearer token, and one place that turns any failure into an `Error` with a readable message (including "can't reach the server" for a 502/network error). `window.prompt/confirm` are replaced by a modal built on the native `<dialog>` element (closes with Cancel or Esc, not on a backdrop click, so a half-typed name isn't lost). The `<select>` is replaced by a GitHub-style context switcher: a button showing the active workspace, which opens a popover with a filter box, a checkmark on the active item, and "New workspace". Rename/Delete move into a "Workspace settings" menu. Success and error messages show as toasts (`sonner`). Buttons follow GitHub's Primer styles (default, primary, danger, invisible) with Octicons.
+- **Why:** The user found the browser `prompt/confirm` popups and plain buttons too basic, asked for dialogs/popovers and toasts, a reusable axios layer with central error handling, a better name than `meRouter`, and separate route and controller files so each file is easier to read.

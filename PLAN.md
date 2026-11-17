@@ -1,32 +1,30 @@
 # Build Plan
 
 Work through one part per AI session. Start each session with: *"Read CLAUDE.md, PLAN.md and docs/DESIGN.md, then do Part N."*
-Tick the boxes as you finish. Test each part on the live URL, then commit before starting the next one.
+Tick the boxes as you finish. Test each part locally, then commit before starting the next one. Deployment (AWS + Docker) happens in Part 8.
 
 Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are required, 7 is optional, and 8 is required (docs).
 
 ---
 
 ## Part 0: Setup (~1h)
-- [ ] Create a Supabase project (free, no card) and enable `vector`
-- [ ] Write `sql/schema.sql` (all tables, constraints, cascades, indexes) and run it
-- [ ] Write `sql/match_chunks.sql` (the workspace filter goes inside the query) and run it
+- [x] Create a Supabase project (free, no card) and enable `vector`
+- [x] Write `sql/schema.sql` (all tables, constraints, cascades, indexes) and run it
+- [x] Write `sql/match_chunks.sql` (the workspace filter goes inside the query) and run it
 - [x] Scaffold `/server` (Express + TS, `GET /health`) and `/client` (Vite React TS)
 - [x] Express serves `client/dist` with a catch-all to `index.html`
 - [x] `.env.example` with no real values
-- [ ] Deploy a "hello" build to Render now, so deploy problems show up early
-- [ ] cron-job.org ping to `/health` every 10 minutes
 - [ ] Get a Gemini key from AI Studio and check the current free chat and embedding model names
 
-**Done when:** the Render URL shows the React page and `/health` returns 200.
+**Done when:** locally, the React page loads, `/health` returns 200, and the 8 tables exist in Supabase. (Deployment moved to Part 8.)
 
 ## Part 1: Auth + workspaces (~1.5h)
-- [ ] Client: Supabase email/password sign-up and login, with the session stored by supabase-js
+- [ ] Client: Supabase email/password sign-up and login plus Continue with Google, with the session stored by supabase-js
 - [ ] Server `middleware/auth.ts`: verify the Bearer JWT, then set `req.user`
 - [ ] Server `middleware/workspace.ts`: `requireWorkspace(userId, wsId)` returns 404 if the user isn't the owner
 - [ ] On first login, create a `profiles` row and a "Default" workspace if none exists
-- [ ] Routes: `GET/POST /api/workspaces`, `PATCH/DELETE /api/workspaces/:wsId`, `GET/PATCH /api/me` (`last_workspace_id`)
-- [ ] Client: workspace switcher, with the active workspace restored from `last_workspace_id`
+- [ ] Routes: `GET/POST /api/workspaces`, `PATCH/DELETE /api/workspaces/:wsId`, `GET/PATCH /api/profile` (`last_workspace_id`)
+- [ ] Client: workspace switcher (GitHub-style popover), create/rename/delete dialogs (no browser `prompt`/`confirm`), toasts, axios helpers in `lib/http.ts`; active workspace restored from `last_workspace_id`
 
 **Done when:** you can sign up, see "Default", create workspace B, switch, reload and stay on B. Another user's workspace id returns 404.
 
@@ -88,7 +86,10 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 - [ ] Observability: show tokens and latency per message on the dashboard
 - [ ] Streaming (last, optional)
 
-## Part 8: Docs (~1h)
+## Part 8: Deploy + docs (~1.5h)
+- [ ] `Dockerfile` (multi-stage: build client and server, then a slim runtime image) and `.dockerignore`. Check that `docker run` works locally
+- [ ] Deploy the image to AWS. Pick the service at that point, and set env vars there, never baked into the image (except the public `VITE_*` values)
+- [ ] Add the deployed URL to Supabase **Authentication → URL Configuration → Redirect URLs**
 - [ ] Fill in the live URL and demo login in `README.md`, and update anything that changed
 - [ ] `.env.example` is complete
 - [ ] `AI_NOTES.md` (about one page): tools and models used, how the work was split, 2–3 decisions of your own, the hardest AI bug (from `AI_CHANGE_LOG.md` ⚠ entries), and improvements. Mention the HNSW and filter trade-off

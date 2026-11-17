@@ -2,17 +2,17 @@
 
 A multi-workspace RAG assistant. Each user owns one or more **workspaces**. Each workspace has its own documents, chats, tasks and tool-call log. The assistant answers questions using **only** the documents in the active workspace, cites its sources, says "I don't know" when the documents don't cover the question, and can call tools that have real side effects.
 
-> **Live demo:** `<RENDER_URL>`
+> **Live demo:** `<LIVE_URL>`
 > **Demo account:** `<demo email>` / `<demo password>`
 >
-> The app runs on Render's free tier. A cron ping to `/health` every 10 minutes keeps it awake. If it has gone to sleep anyway, the first request can take about 50 seconds.
+> The app runs on AWS as a single Docker container. See [Deployment](#deployment-aws--docker).
 
 ---
 
 ## Features
 
-- **Auth:** email and password login through Supabase Auth. A "Default" workspace is created on signup.
-- **Workspaces:** create, rename, delete and switch. The last active workspace is remembered per user.
+- **Auth:** email and password or Google login through Supabase Auth. A "Default" workspace is created on signup.
+- **Workspaces:** create, rename, delete and switch. The last active workspace is remembered per user. A user always keeps at least one workspace, so the last one can't be deleted.
 - **Document ingestion:** `.txt`, `.md` and text-based `.pdf` files. Uploads are deduplicated by SHA-256 hash, then chunked, embedded and stored with `workspace_id` on every chunk.
 - **Scoped RAG chat:** vector search is filtered by workspace inside the SQL query. Answers include citations (file and section), and a citation check in code makes the assistant say "I don't know" whenever an answer isn't backed by this workspace's documents.
 - **Tool calling:** a loop of up to 3 steps. Every tool's arguments are validated with zod, and every call is logged, including failures.
@@ -28,7 +28,7 @@ A multi-workspace RAG assistant. Each user owns one or more **workspaces**. Each
 
 | Layer | Choice |
 |---|---|
-| Frontend | React + Vite + TypeScript |
+| Frontend | React + Vite + TypeScript, axios (one wrapper in `lib/http.ts`), sonner toasts, Primer Octicons |
 | Backend | Node.js + Express + TypeScript |
 | Database + vectors | Supabase Postgres + pgvector |
 | Auth | Supabase Auth (the client sends the JWT; Express verifies it with `supabase.auth.getUser(token)`) |
@@ -36,7 +36,7 @@ A multi-workspace RAG assistant. Each user owns one or more **workspaces**. Each
 | Validation | zod |
 | File parsing | multer + pdf-parse |
 | Notifications | Discord webhook |
-| Hosting | Render, one web service (Express serves the built React app) |
+| Hosting | AWS, one Docker container (Express serves the built React app) |
 
 **Why React + Express instead of Next.js:** I could ship it quickly and explain every line. The backend is plain route handlers, so moving it to Next.js API routes would be mostly mechanical.
 
@@ -51,9 +51,12 @@ React (Vite build, served by Express)
    │  Authorization: Bearer <supabase JWT>
    ▼
 Express
+   ├─ routes/index.ts           apiRouter: requireAuth once, then mounts every resource router
+   ├─ routes/*.routes.ts        paths + middleware only (profile, workspace, documents, chats, …)
+   ├─ controllers/*.controller.ts  request handlers; throw HttpError / ZodError on failure
    ├─ middleware/auth.ts        verify JWT → req.user
    ├─ middleware/workspace.ts   requireWorkspace(userId, wsId) → 404 if not owner
-   ├─ routes/                   workspaces, documents, chats, toolCalls, tasks
+   ├─ middleware/error.ts       one error handler: HttpError → status, ZodError → 400, 23505 → 409, else 500
    └─ services/
         ingest.ts    parse → hash → chunk → embed → insert
         retrieve.ts  embed query → match_chunks(ws_id, …) → threshold
@@ -67,10 +70,15 @@ Supabase Postgres + pgvector
 
 ```
 /client   React + Vite + TS
+   src/lib/http.ts         axios instance + getRequest/postRequest/patchRequest/deleteRequest
+   src/components/ui/      Modal (native <dialog>), Popover
+   src/components/         Dashboard, WorkspaceSwitcher, WorkspaceMenu, dialogs, UserMenu, AuthForm
 /server   Express + TS
-   routes/      workspaces, documents, chats, toolCalls, tasks
-   services/    ingest.ts, retrieve.ts, llm.ts, tools.ts
-   middleware/  auth.ts, workspace.ts
+   routes/       index.ts (apiRouter) + <name>.routes.ts: paths and middleware only
+   controllers/  <name>.controller.ts: the handlers
+   services/     ingest.ts, retrieve.ts, llm.ts, tools.ts
+   middleware/   auth.ts, workspace.ts, error.ts
+   lib/          httpError.ts
 /sql      schema.sql, match_chunks.sql
 CLAUDE.md, README.md, AI_NOTES.md, .env.example
 ```
@@ -114,7 +122,8 @@ All routes need `Authorization: Bearer <jwt>`. Every route under `/workspaces/:w
 |---|---|---|
 | GET, POST | `/api/workspaces` | List or create workspaces |
 | PATCH, DELETE | `/api/workspaces/:wsId` | Rename or delete a workspace |
-| PATCH | `/api/me` | Save `last_workspace_id` |
+| GET | `/api/profile` | Current user and `last_workspace_id`. On first call it creates the profile and a "Default" workspace |
+| PATCH | `/api/profile` | Save `last_workspace_id` (must be a workspace you own) |
 | GET, POST | `/api/workspaces/:wsId/documents` | List or upload documents |
 | DELETE | `/api/workspaces/:wsId/documents/:id` | Delete a document and its chunks |
 | GET, POST | `/api/workspaces/:wsId/chats` | List or create chats |
@@ -221,6 +230,10 @@ create extension if not exists vector;
 
 Then run `sql/schema.sql` and `sql/match_chunks.sql`.
 
+In **Authentication → Sign In / Providers → Email**, turn off **Confirm email** so new accounts can sign in straight away.
+
+For **Continue with Google**, enable **Authentication → Sign In / Providers → Google** with an OAuth client ID and secret from Google Cloud (authorized redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback`). Then add `http://localhost:5173` and the deployed URL under **Authentication → URL Configuration → Redirect URLs**. Until this is set up, the button shows Supabase's "provider is not enabled" error.
+
 ### 2. Environment
 
 Copy `.env.example` to `.env` in `/server`, and the client values to `/client/.env`:
@@ -252,7 +265,7 @@ cd server && npm install && npm run dev
 cd client && npm install && npm run dev
 ```
 
-### 4. Production build (what Render runs)
+### 4. Production build (what the Docker image runs)
 
 ```bash
 cd client && npm install && npm run build      # → client/dist
@@ -263,11 +276,12 @@ Express serves `client/dist` as static files, with a catch-all route back to `in
 
 ---
 
-## Deployment (Render)
+## Deployment (AWS + Docker)
 
-- One **Web Service**, with the build and start commands above.
-- Set the same environment variables in the Render dashboard.
-- Keep-alive: a [cron-job.org](https://cron-job.org) job calls `GET /health` every 10 minutes so the free instance doesn't sleep.
+- The app ships as **one Docker image**: the build stage compiles the client and server, and the runtime stage runs `node server/dist/index.js`, which serves both the API and `client/dist`.
+- Secrets (`SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `DISCORD_WEBHOOK_URL`) are passed to the container as environment variables at runtime and never baked into the image. The public `VITE_*` values are build arguments, because Vite inlines them at build time.
+- `GET /health` is the container health check.
+- The AWS service and exact steps are added here when the app is deployed (Part 8).
 
 ---
 

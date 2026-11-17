@@ -13,13 +13,13 @@ A take-home assignment: a **multi-workspace document assistant** with RAG and to
 
 ## Stack (decided, don't change)
 
-- **Client:** React + Vite + TypeScript, in `/client`
+- **Client:** React + Vite + TypeScript, in `/client`. API calls go through `client/src/lib/http.ts` (axios + `getRequest/postRequest/patchRequest/deleteRequest`), never raw `fetch`/axios in components. Notifications use `sonner` toasts; confirmations and forms use the `Modal` component (native `<dialog>`), never `window.alert/prompt/confirm`. Styling follows GitHub Primer (`.btn`, `.btn-primary`, `.btn-danger`, …) with `@primer/octicons-react` icons.
 - **Server:** Node.js + Express + TypeScript, in `/server`
 - **DB:** Supabase Postgres + pgvector, with SQL in `/sql`
 - **Auth:** Supabase Auth. The client sends the JWT in `Authorization: Bearer`, and the server verifies it with `supabase.auth.getUser(token)`.
 - **LLM and embeddings:** Gemini via `@google/genai`. Embeddings have 768 dimensions.
 - **Validation:** zod. **Uploads:** multer + pdf-parse. **Notifications:** Discord webhook.
-- **Hosting:** one Render web service. Express serves `client/dist`.
+- **Hosting:** AWS, one Docker container. Express serves `client/dist`. Deployment is the last step (Part 8). The recruiter said it can be skipped, so don't block other parts on it.
 - No Next.js, no server actions, no ORM. Keep the code simple enough for the user to explain every line in an interview.
 
 ## Hard rules (never break these)
@@ -59,9 +59,12 @@ Password reset, custom or refresh tokens, message pagination, read receipts, cha
 ```
 /client   React + Vite + TS
 /server   Express + TS
-   src/routes/      workspaces, documents, chats, toolCalls, tasks, me
-   src/services/    ingest.ts, retrieve.ts, llm.ts, tools.ts
-   src/middleware/  auth.ts, workspace.ts
+   src/routes/       index.ts (apiRouter: requireAuth, then mounts each router)
+                     <name>.routes.ts: paths + middleware only, a plain `router` variable
+   src/controllers/  <name>.controller.ts: handlers. Throw HttpError / zod errors, don't build error responses
+   src/services/     ingest.ts, retrieve.ts, llm.ts, tools.ts
+   src/middleware/   auth.ts, workspace.ts, error.ts (the one error handler)
+   src/lib/          httpError.ts
 /sql      schema.sql, match_chunks.sql, seed notes
 /docs     DESIGN.md
 /seed     sample docs for the demo workspaces

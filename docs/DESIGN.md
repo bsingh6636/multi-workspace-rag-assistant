@@ -221,6 +221,13 @@ for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
 - Ingestion failure: the document is marked `failed` with the error, and partial chunks are removed.
 - Every route is wrapped in try/catch, followed by a JSON error. Stack traces and env values are never returned to the client.
 
+## 6b. Server code layout and errors
+
+- `routes/index.ts` builds one `apiRouter`: `apiRouter.use(requireAuth)` runs first for every API route, then each resource router is mounted (`/profile`, `/workspaces`, later `/workspaces/:wsId/documents` …). `index.ts` only does `app.use('/api', apiRouter)`. Auth is on the API router, not app-wide, because `/health` and the React files must stay public.
+- `routes/<name>.routes.ts` holds paths and middleware only; `controllers/<name>.controller.ts` holds the handlers. One file answers "which URLs exist", the other "what each one does".
+- Controllers never build error responses. They `throw new HttpError(status, message)`, or let `schema.parse()` throw a `ZodError`, or rethrow the Supabase error. `middleware/error.ts` maps `HttpError` → its status, `ZodError` → 400 (first issue), Postgres `23505` → 409, anything else → 500 with a generic body. Only `err.message` is logged.
+- Client mirror: `lib/http.ts` turns every failure into an `ApiError` with a readable `message` (network/502 → "Can't reach the server", 401 → signs out). Components show it in a toast, or inline inside the open dialog.
+
 ## 7. HNSW and filter trade-off (put this in AI_NOTES)
 
 With an HNSW index, pgvector filters `WHERE workspace_id` **after** the approximate search, so a query can return fewer than k rows. Isolation holds, but recall drops. At this data size an exact scan (no vector index) is fast enough, so we don't add one. At scale, the options are `hnsw.iterative_scan` (pgvector 0.8+), partial indexes per large tenant, or partitioning.
@@ -240,7 +247,7 @@ The first design draft was reviewed, and these were the problems:
 7. `chats.message_id`, `type` and `last_message` put the relation on the wrong side, or could be derived, so they were removed. `party [bot,user]` became `role`.
 8. Custom access and refresh tokens plus password reset were replaced by Supabase Auth.
 9. "Block the user until they create a workspace" was replaced by auto-creating "Default".
-10. A separate `/switch` route was replaced by `PATCH /api/me { last_workspace_id }`.
+10. A separate `/switch` route was replaced by `PATCH /api/profile { last_workspace_id }` (first named `/api/me`; renamed because it reads and updates the `profiles` row).
 11. **⚠ The threshold was a gate in front of the LLM.** "No chunk ≥ threshold" went straight to "I don't know" with no LLM call, so tool-only requests ("save a task: call the vendor tomorrow") never reached the model. This was found by tracing that message through the flow diagram. **Fixed:** the threshold now filters chunks (zero allowed), the LLM is always called with tools, and a citation guard in code keeps refusals deterministic (§4).
 
 Stack history: Next.js on Vercel was considered and rejected. The user knows React and Express, and learning Next.js the night before risks hours of framework issues plus code the user can't defend. Interview answer: *"I chose React and Express to ship fast and defend every line. The backend is plain route handlers, so moving it to Next.js API routes is mostly mechanical."*

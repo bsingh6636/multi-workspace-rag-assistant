@@ -1,7 +1,7 @@
 {
   "name": "multi-workspace-rag-assistant",
   "private": true,
-  "description": "Root scripts so Render needs one build command and one start command",
+  "description": "Root scripts: one build command and one start command (used by the Docker image)",
   "scripts": {
     "build": "npm ci --include=dev --prefix client && npm run build --prefix client && npm ci --include=dev --prefix server && npm run build --prefix server",
     "start": "npm start --prefix server"
