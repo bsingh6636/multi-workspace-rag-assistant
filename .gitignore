@@ -14,3 +14,6 @@ build/
 # Logs / OS
 *.log
 .DS_Store
+
+# Personal notes - local only
+user-later.md

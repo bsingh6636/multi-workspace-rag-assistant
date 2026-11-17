@@ -42,7 +42,7 @@ Password reset, custom or refresh tokens, message pagination, read receipts, cha
 
 ## Session workflow
 
-1. Each session works on **one part** from `PLAN.md`. Check which parts are already ticked.
+1. Each session works on **one part** from `PLAN.md`. Check which parts are already ticked. Before writing code, write the detailed plan for that part to `docs/plans/part-N-<name>.md`. After the part is built, stop so the user can review the code and changes before the next part.
 2. **Before every change**, append an entry to `AI_CHANGE_LOG.md`:
    ```
    ## YYYY-MM-DD HH:MM IST: <title>

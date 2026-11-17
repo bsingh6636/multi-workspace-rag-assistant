@@ -53,3 +53,23 @@ Entry format:
 - **Files:** `.git/config` (adds the `origin` remote)
 - **What:** Created the public repo `bsingh6636/multi-workspace-rag-assistant` with `gh repo create` and set it as `origin` (SSH). Nothing is pushed yet because there are no commits.
 - **Why:** The user asked for a public repo. The name is spelled correctly, leaves out the company name, and tells a visitor what the project is. The local folder still has the old misspelled name. Renaming it is left to the user, because the running Claude session and its memory folder are tied to that path.
+
+## 2026-11-18 00:50 IST: Per-part plan files, starting with Part 0
+- **Files:** `docs/plans/part-0-setup.md` (new), `CLAUDE.md`
+- **What:** Added a detailed plan file for Part 0 covering the files to create, the decisions, which steps the user does by hand (Supabase, Render, Gemini key, cron) and how to verify. Added a line to the CLAUDE.md session workflow: each part gets `docs/plans/part-N-*.md` written before any code, and the session stops after the part for the user's review.
+- **Why:** The user asked for plans to live in files and for work to go one phase at a time, with a review after each phase. `PLAN.md` is the checklist; the per-part file holds the detail for that part so the user can review the plan alongside the code.
+
+## 2026-11-18 00:53 IST: Part 0 code: SQL schema, server and client scaffold
+- **Files:** `sql/schema.sql`, `sql/match_chunks.sql`, `server/**`, `client/**`, `package.json`, `.env.example`, `.nvmrc`
+- **What:** Wrote the full schema (all tables, checks, cascades, indexes, RLS on with no policies) and the `match_chunks` function with the workspace filter inside the vector query. Scaffolded Express 5 + TS with `/health`, a JSON 404 for unknown `/api` routes, static serving of `client/dist` with an `index.html` catch-all, and a JSON error handler. Scaffolded Vite React TS with a page that calls `/health`. A root `package.json` gives Render one build and one start command.
+- **Why:** Part 0 of `PLAN.md`. Details and decisions are in `docs/plans/part-0-setup.md`.
+
+## 2026-11-18 01:02 IST: Tick the finished Part 0 code items
+- **Files:** `PLAN.md`
+- **What:** Ticked the scaffold, static serving and `.env.example` items. The SQL items stay open until the files are run in Supabase, and the Render, cron and Gemini items stay open until the user does them.
+- **Why:** Locally verified: `npm run build` from the root builds both apps, `/health` returns 200 `{"ok":true}`, `/api/nope` returns a JSON 404, and an unknown client route returns `index.html`.
+
+## 2026-11-18 02:23 IST: Keep the personal notes file out of git
+- **Files:** `.gitignore`
+- **What:** Added `user-later.md` to `.gitignore` and unstaged it. The file itself is unchanged.
+- **Why:** The file holds the user's personal study notes. The user chose to keep it local so it doesn't appear in the graded commit history.

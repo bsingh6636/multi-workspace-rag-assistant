@@ -11,9 +11,9 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 - [ ] Create a Supabase project (free, no card) and enable `vector`
 - [ ] Write `sql/schema.sql` (all tables, constraints, cascades, indexes) and run it
 - [ ] Write `sql/match_chunks.sql` (the workspace filter goes inside the query) and run it
-- [ ] Scaffold `/server` (Express + TS, `GET /health`) and `/client` (Vite React TS)
-- [ ] Express serves `client/dist` with a catch-all to `index.html`
-- [ ] `.env.example` with no real values
+- [x] Scaffold `/server` (Express + TS, `GET /health`) and `/client` (Vite React TS)
+- [x] Express serves `client/dist` with a catch-all to `index.html`
+- [x] `.env.example` with no real values
 - [ ] Deploy a "hello" build to Render now, so deploy problems show up early
 - [ ] cron-job.org ping to `/health` every 10 minutes
 - [ ] Get a Gemini key from AI Studio and check the current free chat and embedding model names
