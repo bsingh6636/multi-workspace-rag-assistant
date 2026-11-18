@@ -199,6 +199,10 @@ With the LLM always called, refusal can't rely on the prompt alone. `services/ci
    - The model's own refusal text is also uncited, so it's replaced by the identical fixed string, which is harmless.
 5. Save `retrieval.hit = citations.length > 0` for the debug panel and observability.
 
+**Debug panel (Part 7).** `messages.retrieval` stores the workspace id, threshold, k and every ranked chunk: id, file, section, similarity, kept, and its label if kept. It never stores chunk text. With `tokens_in`, `tokens_out` and `latency_ms` from the same row, the chat shows a per-answer details panel. Cited chunks are taken from `citations`.
+
+**No streaming (decision).** The guard above runs on the finished text and may replace it entirely. Streaming tokens first would show the user text that the guard then withdraws. Holding the stream until the guard passes gives no benefit. So answers arrive whole.
+
 This keeps refusals deterministic: an uncited factual claim can never reach the user.
 
 ## 5. Tool loop
@@ -269,6 +273,13 @@ otherwise               → success, { result }
 
   A reliable model beats a newer one that's overloaded, because graders test at random times. That's why the user made flash-lite the primary after Part 3 (see `docs/research/llm-models-and-latency.md`).
 - Gemini 429 or 5xx (including 503 "high demand"): retry up to 3 times with backoff of 1s, 2s and 4s, then make one attempt on `GEMINI_CHAT_FALLBACK_MODEL`. Only after that does the assistant message become `failed`.
+- **Second API key (`GEMINI_API_KEY_FALLBACK`, optional, another Google account).** Free-tier quotas are per project and per model. After both models hit their daily limit during testing, the user added a second key. `services/gemini.ts` holds one client per key, and `withKeys(model, fn)` tries the keys in order.
+  - **Chat order:** primary model on the primary key (with retries), primary model on the fallback key, then the fallback model on each key (one try each).
+  - **Embeddings:** the primary key, then the fallback key. It's the same model, so the vectors share one space.
+  - **Daily quota:** a 429 whose `retryDelay` is 60 s or more (the free-tier daily limit says hours) isn't retried. That key and model are skipped until the reset time. The skip list is in memory, so a restart rediscovers it with one quick 429.
+  - **Pinning:** a tool-loop turn pins the key along with the model.
+  - **Logs and errors** name the key ("primary key" / "fallback key"), never its value. When every key is out, the message says "free quota is used up for now".
+  - The upload size limit still assumes one key's per-minute embedding quota (conservative).
 - Set a per-request timeout of about 30s on every Gemini call, because a hung request was seen in testing. A timeout counts as a retryable error.
 - An LLM failure never loses the user's message, because it is saved first. The assistant row is marked `failed` and the client shows Retry, which re-runs the same question.
 - Ingestion failure: the document is marked `failed` with the error, and partial chunks are removed.
@@ -292,6 +303,14 @@ Documents, tasks and the tool-call log are paged with a cursor, not OFFSET (`lib
 - `routes/<name>.routes.ts` holds paths and middleware only; `controllers/<name>.controller.ts` holds the handlers. One file answers "which URLs exist", the other "what each one does".
 - Controllers never build error responses. They `throw new HttpError(status, message)`, or let `schema.parse()` throw a `ZodError`, or rethrow the Supabase error. `middleware/error.ts` maps `HttpError` → its status, `ZodError` → 400 (first issue), Postgres `23505` → 409, anything else → 500 with a generic body. Only `err.message` is logged.
 - Client mirror: `lib/http.ts` turns every failure into an `ApiError` with a readable `message` (network/502 → "Can't reach the server", 401 → signs out). Components show it in a toast, or inline inside the open dialog.
+
+## 6c. Client URLs
+
+`/w/<wsId>` (Chat) and `/w/<wsId>/documents|tasks|tool-calls`, parsed by `client/src/lib/route.ts` with no router library. Plan: `docs/plans/url-routing.md`.
+
+- A workspace id in the URL wins over `profiles.last_workspace_id`, but only if it's in the user's `/workspaces` list. Otherwise: toast, then the last workspace. `/` opens the last workspace and is replaced with its URL.
+- Clicking a workspace or tab pushes a history entry. Redirects and the jump after deleting a workspace replace it.
+- The URL only picks what to show. Ownership is still checked on the server for every `/api/workspaces/:wsId/...` call (hard rule 1).
 
 ## 7. HNSW and filter trade-off (put this in AI_NOTES)
 

@@ -7,6 +7,9 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react()],
   server: {
+    // The dev server is shared through a Cloudflare Tunnel at this host name,
+    // and Vite rejects requests for host names it doesn't know.
+    allowedHosts: ['local.brijeshhq.com'],
     proxy: {
       '/api': 'http://localhost:3000',
       '/health': 'http://localhost:3000',

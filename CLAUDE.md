@@ -19,10 +19,11 @@ A take-home assignment: a **multi-workspace document assistant** with RAG and to
 - **Auth:** Supabase Auth. The client sends the JWT in `Authorization: Bearer`, and the server verifies it with `supabase.auth.getUser(token)`.
 - **LLM and embeddings:** Gemini via `@google/genai`. Model names come from env, never hard-coded in calls.
   - Chat: `gemini-3.5-flash-lite`. Fallback: `gemini-3.6-flash`, used after retries on the primary fail with 429/503. (Swapped after Part 3: 3.6-flash kept returning 503, then 429.)
+  - Optional second key `GEMINI_API_KEY_FALLBACK` (another account): tried after the primary key for the same model, and skipped/used until a daily quota resets (`withKeys` in `services/gemini.ts`). Never log either key.
   - Embeddings: `gemini-embedding-001` with `outputDimensionality: 768`.
   - Don't use `gemini-3.8-flash` or `gemini-4-hydrogen` (often 503) or `gemini-2.5-flash` (404 for new users). All were tested on 2026-11-18.
 - **Validation:** zod. **Uploads:** multer + pdf-parse. **Notifications:** Discord webhook.
-- **Hosting:** AWS, one Docker container. Express serves `client/dist`. Deployment is the last step (Part 8). The recruiter said it can be skipped, so don't block other parts on it.
+- **Hosting:** the user's Azure VM (Docker + Compose), one app container behind Caddy for HTTPS (`deploy/`). Express serves `client/dist`. The image is built locally and copied over SSH; secrets go in `app.env` on the VM, never in the image. Deployment is the last step (Part 8). The recruiter said it can be skipped, so don't block other parts on it.
 - No Next.js, no server actions, no ORM. Keep the code simple enough for the user to explain every line in an interview.
 
 ## Hard rules (never break these)

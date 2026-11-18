@@ -146,7 +146,7 @@ Entry format:
 - **Why:** Part 2 of `PLAN.md`, following the plan-file-first workflow. pdf-parse v2 and batch `embedContent` were checked with a real call first (pages come back separately; 768-dim vectors have norm about 0.59, so they need normalizing).
 
 ## 2026-11-18 04:28 IST: Part 2 code: upload, extract, chunk, embed, store; Documents panel
-- **Files:** `server/src/config.ts`, `server/src/services/{gemini,embeddings,chunker,extract,ingest}.ts` (new), `server/src/middleware/{upload,error}.ts`, `server/src/routes/{document,workspace}.routes.ts`, `server/src/controllers/document.controller.ts` (new), `server/test/chunker.test.ts` (new), `server/package.json`, `client/src/types.ts`, `client/src/components/{DocumentsPanel,DeleteDocumentDialog}.tsx` (new), `client/src/components/Dashboard.tsx`, `client/src/index.css`
+- **Files:** `server/src/config.ts`, `server/src/services/{gemini,embeddings,chunker,extract,ingest}.ts` (new), `server/src/middleware/{upload,error}.ts`, `server/src/routes/{document,workspace}.routes.ts`, `server/src/controllers/document.controller.ts` (new), `server/test/chunker.test.ts` (new), `server/package.json`, `client/src/types.ts`, `client/src/components/{DocumentsPanel,DeleteDocumentDialog}.tsx` (new), `client/src/components/Dashboard.tsx`
 - **What:** The upload route and ingestion pipeline described in `docs/plans/part-2-ingestion.md`: multer upload with extension and size limits, PDF/text extraction, normalization, SHA-256 dedup per workspace, heading-aware chunking (~800/150), batched Gemini embeddings (retry on 429/5xx/timeout, normalized to length 1), chunk rows stored with `workspace_id`, and the processing → ready/failed status. List and delete routes are scoped to the workspace. Client: a Documents panel with upload, status labels and delete.
 - **Why:** Part 2 of `PLAN.md`.
 
@@ -176,7 +176,7 @@ Entry format:
 - **Why:** Part 3 of `PLAN.md`, following the plan-file-first workflow. A probe just before planning found `gemini-3.6-flash` returning 503 "high demand" while `gemini-3.5-flash-lite` answered correctly with a `[c1]` citation, so the fallback path is needed in practice, not just on paper.
 
 ## 2026-11-18 04:50 IST: Part 3 code: retrieval, prompt, LLM with fallback, citation guard, chats; chat UI
-- **Files:** `server/src/config.ts`, `server/src/db.ts`, `server/src/types/express.d.ts`, `server/src/services/{retrieve,prompt,llm,citations,chat}.ts` (new), `server/src/middleware/chat.ts` (new), `server/src/routes/{chat,workspace}.routes.ts`, `server/src/controllers/chat.controller.ts` (new), `server/test/citations.test.ts` (new), `client/src/types.ts`, `client/src/components/{ChatPanel,ChatMessage}.tsx` (new), `client/src/components/Dashboard.tsx`, `client/src/index.css`
+- **Files:** `server/src/config.ts`, `server/src/db.ts`, `server/src/types/express.d.ts`, `server/src/services/{retrieve,prompt,llm,citations,chat}.ts` (new), `server/src/middleware/chat.ts` (new), `server/src/routes/{chat,workspace}.routes.ts`, `server/src/controllers/chat.controller.ts` (new), `server/test/citations.test.ts` (new), `client/src/types.ts`, `client/src/components/{ChatPanel,ChatMessage}.tsx` (new), `client/src/components/Dashboard.tsx`
 - **What:** The chat flow from `docs/plans/part-3-rag-chat.md`: the user message is saved first, then a pending assistant row. Retrieval runs `match_chunks` (workspace filter inside the query) and keeps chunks at or above the threshold (zero is fine). The prompt holds escaped, labelled chunks. Gemini is called with retry and the fallback model. The citation guard strips invented labels and forces the fixed refusal for uncited answers. Retry reuses the failed row. Client: a chat tab with a chat list, messages, sources and Retry.
 - **Why:** Part 3 of `PLAN.md`.
 
@@ -465,7 +465,7 @@ Entry format:
 - **Why:** PLAN.md Part 5. Before this session, the user also asked me to check the other sessions' changes and the AI models: 85/85 unit tests, typecheck and lint pass, and `gemini-3.5-flash-lite`, `gemini-3.6-flash` and `gemini-embedding-001` each answered a one-line probe (the fallback's daily limit has reset).
 
 ## 2026-11-18 08:00 IST: Part 5 code: Tasks and Tool calls tabs
-- **Files:** `client/src/types.ts`, `client/src/components/TasksPanel.tsx` (new), `client/src/components/ToolCallsPanel.tsx` (new), `client/src/components/Dashboard.tsx`, `client/src/index.css`
+- **Files:** `client/src/types.ts`, `client/src/components/TasksPanel.tsx` (new), `client/src/components/ToolCallsPanel.tsx` (new), `client/src/components/Dashboard.tsx`
 - **What:**
   - Two new dashboard tabs next to Chat and Documents, each remounted per workspace (`key={active.id}`) like the existing panels.
   - **Tasks:** title, due date ("Due Fri, 20 Nov 2026") with an "Overdue" or "Due today" label against the browser's local date, and when it was saved. Refresh button, skeleton while loading, empty state with a hint. Read-only (tasks come from `save_task`).
@@ -611,3 +611,114 @@ Entry format:
 - **Files:** client/src/index.css
 - **What:** `.msg-tool svg` → `.msg-tool > svg`, so only the ✓/✕ status icon gets the success/danger colour and the 4px right margin.
 - **Why:** ⚠ AI mistake. Noticed in the user's screenshot: the ⓘ hint was green like the ✓. `.msg-tool svg` (0,1,1) also matched the SVG inside `.msg-tool-info` and beat that span's `color: var(--fg-muted)`, so a hint looked like a second success mark.
+
+## 2026-11-18 09:24 IST: Part 7 plan: retrieval debug panel and per-answer tokens/latency; streaming skipped
+- **Files:** `docs/plans/part-7-stretch.md`
+- **What:** Plan for Part 7.
+  - A "Details" button next to Copy under each answer opens a panel: workspace id, threshold, top-k, each retrieved chunk (file, section, similarity, kept or below threshold, the label it got, whether the answer cited it), tokens in/out and latency.
+  - `retrieve.ts` also records each chunk's file name, section and label (old messages still render).
+  - Streaming is not built (reason in the plan).
+- **Why:** PLAN.md Part 7. Before starting, I checked the combined tree after the other sessions' work: 105/105 server tests, typechecks and the client build pass. Client lint has 2 warnings, in files another session is editing (`useList.ts`, `Dashboard.tsx`); I asked that session about them.
+
+## 2026-11-18 09:24 IST: Part 7 server: the retrieval record names each chunk's file, section and label
+- **Files:** `server/src/services/retrieve.ts`, `server/test/retrieve.test.ts` (new)
+- **What:** The kept/threshold mapping moves into a pure, exported `splitByThreshold(workspaceId, rows, threshold, k)` with unit tests. `retrieve()` calls it and still does the scoped vector query itself. Each `retrieval.retrieved` entry now also has `filename`, `section` and `label` (`c1`… for kept chunks, null below the threshold). Chunk text is not added.
+- **Why:** Part 7 debug panel: bare chunk UUIDs don't tell a reader which document matched.
+
+## 2026-11-18 09:25 IST: Part 7 client: "Details" panel under each answer (retrieval, tokens, latency)
+- **Files:** `client/src/types.ts`, `client/src/components/ChatMessage.tsx`, `client/src/index.css` (appended)
+- **What:**
+  - `Message` gets `retrieval`, `tokens_in`, `tokens_out` and `latency_ms`.
+  - A finished answer is rendered by a new `Answer` component. It holds the open/closed state of a "Details" toggle (pulse icon, next to Copy).
+  - The panel shows:
+    - the workspace id, threshold, top-k, how many chunks were kept and whether the answer cited any
+    - one row per retrieved chunk in rank order: label, file › section, similarity and status (cited / in prompt / below threshold), chunk id on hover
+    - tokens in/out and latency
+  - Old messages without the Part 7 fields show "—" for the file. Messages with no retrieval record show only the cost line.
+- **Why:** PLAN.md Part 7 (retrieval debug panel, and tokens and latency per message).
+
+## 2026-11-18 09:26 IST: Plan for workspace and tab URLs
+- **Files:** docs/plans/url-routing.md (new)
+- **What:** Plan only, no code yet. URLs like `/w/<wsId>/documents`; the URL wins over `last_workspace_id`, and a bare `/` opens the last workspace as now.
+- **Why:** User asked for reload-safe workspace and tab URLs and asked for the idea to be written down.
+
+## 2026-11-18 09:31 IST: Workspace and tab URLs
+- **Files:** client/src/lib/route.ts (new), client/src/components/Dashboard.tsx, client/src/components/UserMenu.tsx, docs/plans/url-routing.md, docs/DESIGN.md
+- **What:**
+  - URLs `/w/<wsId>` (Chat) and `/w/<wsId>/documents|tasks|tool-calls`. A workspace id in the URL wins over `last_workspace_id`. `/` opens the last workspace and becomes `/w/<id>`.
+  - An id that isn't in the user's list shows "Workspace not found" and opens the last workspace instead.
+  - Clicking a workspace or tab pushes a history entry (Back/Forward work). Redirects, fixes and the jump after deleting a workspace replace the current entry.
+  - Opening a workspace from the URL or with Back also saves it as `last_workspace_id`.
+  - Sign out from the user menu resets the URL to `/`, so the next user doesn't land on a "not found" link. A sign-out caused by an expired session keeps the URL, so logging in again returns to the same place.
+- **Why:** User asked for reload-safe, linkable workspace and tab URLs. Before, a reload always opened Chat and Back did nothing. No router library: three small helpers are enough and easy to explain.
+
+## 2026-11-18 09:30 IST: Part 7 done: docs, PLAN.md ticks, results; streaming not built
+- **Files:** `README.md`, `docs/DESIGN.md`, `PLAN.md`, `docs/plans/part-7-stretch.md`
+- **What:**
+  - README: the feature line describes the Details panel. Walkthrough step 2 says how to open it. "Out of scope" says why streaming wasn't built.
+  - DESIGN §4: the debug panel and the streaming trade-off.
+  - PLAN.md: the debug panel and observability boxes are ticked. Streaming is marked "not built (decision)".
+  - Plan file: results recorded.
+- **Why:** End of Part 7. Both Gemini chat models hit their free-tier daily limits during this part (flash-lite 500/day, flash 20/day; resets in about 4.5 h). The browser check therefore used real retrieval records (embeddings have a separate quota) on stored answers, not live answers.
+
+## 2026-11-18 09:35 IST: Second Gemini key (GEMINI_API_KEY_FALLBACK) used when the first key's quota runs out
+- **Files:** `server/src/config.ts`, `server/src/services/gemini.ts`, `server/src/services/llm.ts`, `server/src/services/embeddings.ts`, `server/src/services/toolLoop.ts`, `server/test/gemini.test.ts` (new), `.env.example`, `docs/DESIGN.md`, `README.md`, `CLAUDE.md`
+- **What:**
+  - New optional `GEMINI_API_KEY_FALLBACK` (an API key from another Google account).
+  - **Chat order:** main model on the primary key (with retries), the same model on the fallback key, then the fallback model on each key.
+  - **Embeddings:** the primary key, then the fallback key.
+  - **Cooldown:** a 429 that says to retry in 60 s or more (the free-tier *daily* limit) isn't retried. That key and model are skipped until the reset time Gemini gave, so later requests don't spend 7 s of retries on a key that's out for hours.
+  - **Pinning:** a tool-loop turn pins the key as well as the model.
+  - A quota error on every key now says "free quota is used up for now" instead of "try again in a minute".
+  - Logs name the key ("primary key" / "fallback key"), never its value.
+- **Why:** The user added the second key after both chat models hit their daily free-tier limit (flash-lite 500/day, flash 20/day) during Part 7 testing. Until the reset, every chat answer failed. A one-line check showed the new key works with both chat models and the embedding model.
+
+## 2026-11-18 09:50 IST: Part 8 plan, Dockerfile and .dockerignore
+- **Files:** `docs/plans/part-8-deploy.md` (new), `Dockerfile` (new), `.dockerignore` (new), `PLAN.md`
+- **What:**
+  - **Plan:** build the image on the laptop and copy it to the user's server (`docker save | ssh … docker load`), then `docker run --env-file` there.
+  - **Dockerfile:** multi-stage. The build stage compiles the client (the public `VITE_*` values are build args) and the server. The runtime stage has production deps, the two `dist` folders and `/seed` (for the seed script), and a `/health` HEALTHCHECK.
+  - **`.dockerignore`:** keeps `.env` files, `node_modules`, `dist`, `_private/` and `.git` out of the build context.
+  - **PLAN.md:** ticked the Part 1 boxes and Part 2's client box. They were built and committed in `3b9c2f5` and `49fd5a2`, but never ticked.
+- **Why:** The user asked to build the image locally "with envs and all" and move it to their server, which already runs Docker. The secrets go in a `.env` file on the server rather than inside the image. Anyone holding an image can read baked-in values with `docker inspect` or `docker history`, and the README and PLAN already promise "never baked into the image".
+
+## 2026-11-18 10:02 IST: Hosting moves from AWS to the user's Azure VM, behind Caddy for HTTPS
+- **Files:** `deploy/compose.yml` (new), `deploy/README.md` (new), `docs/plans/part-8-deploy.md`, `README.md`, `CLAUDE.md`, `PLAN.md`
+- **What:**
+  - **Target:** the user's Azure VM (Oracle Linux 8, x86_64), which already runs Docker and Compose. Ports 80 and 443 are free there.
+  - **Compose:** `deploy/compose.yml` runs the app image plus Caddy. Caddy gets a Let's Encrypt certificate for the subdomain and forwards HTTPS to the app on 3000. Only Caddy publishes ports; the app isn't reachable directly.
+  - **Secrets:** the app's secrets live in `app.env` on the VM, never in the image.
+  - **Docs:** `deploy/README.md` lists the steps one by one, with a short reason for each, because the user wants to learn them. The docs that said "AWS" now say the Azure VM.
+- **Why:** The user chose to deploy to a VM they already have, at a subdomain of their own domain, so the recruiter gets a fixed HTTPS link. Caddy was picked over a tunnel: the link stays the same across restarts, HTTPS renews itself, and there's no extra account.
+
+## 2026-11-18 10:02 IST: App favicon instead of Vite's default
+- **Files:** client/public/favicon.svg
+- **What:** Replaced the Vite logo (purple lightning bolt) with the app's own icon: a document with a chat bubble, on a rounded square in the Primer accent blue (#0969da).
+- **Why:** The browser tab still showed the Vite scaffold logo. The new icon matches the product (chat over your documents) and the app's colours.
+
+## 2026-11-18 10:12 IST: Share the local dev app at local.brijeshhq.com through a Cloudflare Tunnel
+- **Files:** `client/vite.config.ts`
+- **What:**
+  - Added `server.allowedHosts: ['local.brijeshhq.com']`. Vite's dev server rejects requests whose Host header it doesn't know.
+  - **Outside the repo:** a named Cloudflare Tunnel `workspace-assistant`, set up by `cloudflared` in `~/.cloudflared/` (credentials, `workspace-assistant.yml`, log). It sends `local.brijeshhq.com` to `http://localhost:5173`, and Vite's proxy forwards `/api` to the dev server on :3000.
+  - Not marked as the live deployment in PLAN or README.
+- **Why:** The user wants a quick shareable URL that runs from the laptop, with no Docker for now. The VM, Caddy and Docker files stay in the repo for a real deployment later.
+
+## 2026-11-18 14:49 IST: Simpler, clearer favicon
+- **Files:** client/public/favicon.svg
+- **What:** Redrew the icon as two stacked white pages (your documents, across workspaces) with a yellow AI sparkle, on a blue gradient rounded square. Thicker shapes, fewer details: the old green chat bubble, folded corner and three dots are gone.
+- **Why:** The user asked for a better favicon. At 16px (tab size) the previous document-plus-bubble icon blurred into a smudge. Checked the new one side by side at 16/32/64px on light and dark backgrounds before switching.
+
+## 2026-11-18 15:07 IST: Reliable sign-out and leaner auth state
+- **Files:** `client/src/App.tsx`, `client/src/components/UserMenu.tsx`, `client/src/lib/http.ts`, `client/src/lib/auth.ts` (new), `client/src/components/Dashboard.tsx`
+- **What:**
+  - **⚠ AI mistake:** Sign out called `supabase.auth.signOut()` with the default `global` scope and ignored the result. If the revoke request fails (offline, 5xx), supabase-js keeps the session, so the user stayed signed in while the URL had already jumped to `/`. Found while reviewing the logout flow against auth-js 2.119's `_signOut`. Now one shared `signOut()` in `lib/auth.ts` uses `scope: 'local'`: the session is removed on this device first and the server revoke is best effort. Concurrent callers share one promise.
+  - The 401 handler in `http.ts` uses the same `signOut()`, so several failed requests sign out once, and shows a single "session expired" toast (fixed toast id).
+  - `App.tsx` listens to `onAuthStateChange` only (its `INITIAL_SESSION` event replaces the extra `getSession()` call). It stores the user, not the session, and skips token refreshes, so the dashboard no longer re-renders every hour. On `SIGNED_OUT` it dismisses all toasts left over from the old session. While the session loads it shows a spinner instead of a blank page.
+  - `Dashboard.tsx`: the first-load effect ignores results after it is cleaned up (StrictMode's double run in dev, or sign-out mid-load).
+- **Why:** The user asked to check the logout logic and improve its state, loading and calls.
+
+## 2026-11-18 15:08 IST: Create-workspace button disabled with the suggested name
+- **Files:** `client/src/components/WorkspaceNameDialog.tsx`, `client/src/components/Dashboard.tsx`
+- **What:** **⚠ AI mistake** (the user saw it in the create dialog: "Default_2" was filled in but "Create workspace" stayed disabled). The dialog's "unchanged" rule (renaming to the same name is a no-op) compared against `initialName`, which for Create is only a suggestion, so submitting the suggestion was blocked. The rule now uses a separate `currentName` prop that only Rename passes. Create still pre-fills `initialName`.
+- **Why:** Accepting the suggested name is the normal way to create a workspace.

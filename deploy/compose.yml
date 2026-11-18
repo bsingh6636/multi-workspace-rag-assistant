@@ -1,0 +1,28 @@
+# Runs on the VM, next to app.env (secrets) and .env (APP_DOMAIN only).
+#   docker compose up -d
+# Caddy is the only service with public ports. It gets a free HTTPS certificate
+# for APP_DOMAIN from Let's Encrypt and forwards requests to the app.
+
+services:
+  app:
+    image: workspace-assistant:latest   # loaded with `docker load`, not pulled
+    env_file: app.env                   # server secrets; never baked into the image
+    environment:
+      PORT: "3000"
+    restart: unless-stopped
+    # No `ports:` here, so the app is only reachable through Caddy.
+
+  caddy:
+    image: caddy:2.10
+    command: caddy reverse-proxy --from ${APP_DOMAIN:?set APP_DOMAIN in .env} --to app:3000
+    ports:
+      - "80:80"     # Let's Encrypt check + redirect to HTTPS
+      - "443:443"   # the site
+    volumes:
+      - caddy_data:/data   # keeps the certificate across restarts (avoids Let's Encrypt rate limits)
+    restart: unless-stopped
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:

@@ -1,7 +1,7 @@
 # Build Plan
 
 Work through one part per AI session. Start each session with: *"Read CLAUDE.md, PLAN.md and docs/DESIGN.md, then do Part N."*
-Tick the boxes as you finish. Test each part locally, then commit before starting the next one. Deployment (AWS + Docker) happens in Part 8.
+Tick the boxes as you finish. Test each part locally, then commit before starting the next one. Deployment (Docker on the user's Azure VM) happens in Part 8.
 
 Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are required, 7 is optional, and 8 is required (docs).
 
@@ -19,12 +19,12 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 **Done when:** locally, the React page loads, `/health` returns 200, and the 8 tables exist in Supabase. (Deployment moved to Part 8.)
 
 ## Part 1: Auth + workspaces (~1.5h)
-- [ ] Client: Supabase email/password sign-up and login, with the session stored by supabase-js
-- [ ] Server `middleware/auth.ts`: verify the Bearer JWT, then set `req.user`
-- [ ] Server `middleware/workspace.ts`: `requireWorkspace(userId, wsId)` returns 404 if the user isn't the owner
-- [ ] On first login, create a `profiles` row and a "Default" workspace if none exists
-- [ ] Routes: `GET/POST /api/workspaces`, `PATCH/DELETE /api/workspaces/:wsId`, `GET/PATCH /api/profile` (`last_workspace_id`)
-- [ ] Client: workspace switcher (GitHub-style popover), create/rename/delete dialogs (no browser `prompt`/`confirm`), toasts, axios helpers in `lib/http.ts`; active workspace restored from `last_workspace_id`
+- [x] Client: Supabase email/password sign-up and login, with the session stored by supabase-js
+- [x] Server `middleware/auth.ts`: verify the Bearer JWT, then set `req.user`
+- [x] Server `middleware/workspace.ts`: `requireWorkspace(userId, wsId)` returns 404 if the user isn't the owner
+- [x] On first login, create a `profiles` row and a "Default" workspace if none exists
+- [x] Routes: `GET/POST /api/workspaces`, `PATCH/DELETE /api/workspaces/:wsId`, `GET/PATCH /api/profile` (`last_workspace_id`)
+- [x] Client: workspace switcher (GitHub-style popover), create/rename/delete dialogs (no browser `prompt`/`confirm`), toasts, axios helpers in `lib/http.ts`; active workspace restored from `last_workspace_id`
 
 **Done when:** you can sign up, see "Default", create workspace B, switch, reload and stay on B. Another user's workspace id returns 404.
 
@@ -36,7 +36,7 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 - [x] Embed in batches, retrying with backoff on 429. Insert chunks **with workspace_id**
 - [x] Document `status`: processing → ready (`chunk_count`) / failed (`error`)
 - [x] `GET` list and `DELETE /documents/:id` (chunks cascade)
-- [ ] Client: upload form and document list with status
+- [x] Client: upload form and document list with status
 
 **Done when:** you can upload 2 docs, the chunk rows appear with the right `workspace_id`, and re-uploading the same file adds no chunks.
 
@@ -82,13 +82,13 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 - [x] Check the server logs never print keys or the webhook URL
 
 ## Part 7: Stretch (only if time is left, ~1h)
-- [ ] Retrieval debug panel under each answer showing workspace id, chunk ids, similarity and whether the threshold passed
-- [ ] Observability: show tokens and latency per message on the dashboard
-- [ ] Streaming (last, optional)
+- [x] Retrieval debug panel under each answer showing workspace id, chunk ids, similarity and whether the threshold passed
+- [x] Observability: show tokens and latency per message on the dashboard (in each answer's details panel)
+- [ ] Streaming (last, optional): **not built, by decision.** The citation guard needs the finished answer (DESIGN §4)
 
 ## Part 8: Deploy + docs (~1.5h)
 - [ ] `Dockerfile` (multi-stage: build client and server, then a slim runtime image) and `.dockerignore`. Check that `docker run` works locally
-- [ ] Deploy the image to AWS. Pick the service at that point, and set env vars there, never baked into the image (except the public `VITE_*` values)
+- [ ] Deploy the image to the Azure VM with `deploy/compose.yml` (app + Caddy for HTTPS). Env vars live in `app.env` on the VM, never baked into the image (except the public `VITE_*` values)
 - [ ] Add the deployed URL to Supabase **Authentication → URL Configuration → Redirect URLs**
 - [ ] Fill in the live URL and demo login in `README.md`, and update anything that changed
 - [ ] `.env.example` is complete

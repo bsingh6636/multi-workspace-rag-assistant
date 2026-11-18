@@ -5,7 +5,7 @@ A multi-workspace RAG assistant. Each user owns one or more **workspaces**. Each
 > **Live demo:** `<LIVE_URL>`
 > **Demo account:** `<demo email>` / `<demo password>`
 >
-> The app runs on AWS as a single Docker container. See [Deployment](#deployment-aws--docker).
+> The app runs on an Azure VM as a single Docker container behind Caddy (HTTPS). See [Deployment](#deployment-docker-on-a-vm).
 
 ---
 
@@ -21,7 +21,7 @@ A multi-workspace RAG assistant. Each user owns one or more **workspaces**. Each
   - `complete_task`: marks a task done (deleting is only in the Tasks tab, never a tool)
   - `send_discord_summary`: posts a summary to a Discord webhook
 - **Dashboard:** four tabs for the active workspace: Chat (with the chat history), Documents, Tasks (due date, "Overdue" / "Due today", tick done, delete, "Show done") and Tool calls (status, arguments, error, latency, and the full arguments and result on expand). Switching workspaces reloads every tab.
-- **Retrieval debug panel** (stretch): shows the workspace id, chunk ids and similarity scores under each answer.
+- **Retrieval debug panel:** the pulse icon under an answer opens its details: the workspace id that was searched, every chunk the search ranked (file › section, similarity, and whether it was cited, only in the prompt, or below the threshold), plus tokens in/out and latency for that answer.
 
 ---
 
@@ -37,7 +37,7 @@ A multi-workspace RAG assistant. Each user owns one or more **workspaces**. Each
 | Validation | zod |
 | File parsing | multer + pdf-parse |
 | Notifications | Discord webhook |
-| Hosting | AWS, one Docker container (Express serves the built React app) |
+| Hosting | One Docker container on an Azure VM (Express serves the built React app), with Caddy in front for HTTPS |
 
 **Why React + Express instead of Next.js:** I could ship it quickly and explain every line. The backend is plain route handlers, so moving it to Next.js API routes would be mostly mechanical.
 
@@ -254,6 +254,8 @@ PORT=3000
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=       # server only, never sent to the client
 GEMINI_API_KEY=
+# Optional: a key from a second Google account, used when the first key's quota runs out
+GEMINI_API_KEY_FALLBACK=
 GEMINI_CHAT_MODEL=gemini-3.5-flash-lite
 GEMINI_CHAT_FALLBACK_MODEL=gemini-3.6-flash      # used when the primary is rate-limited or overloaded
 GEMINI_EMBED_MODEL=gemini-embedding-001          # called with outputDimensionality 768
@@ -298,12 +300,14 @@ Express serves `client/dist` as static files, with a catch-all route back to `in
 
 ---
 
-## Deployment (AWS + Docker)
+## Deployment (Docker on a VM)
 
 - The app ships as **one Docker image**: the build stage compiles the client and server, and the runtime stage runs `node server/dist/index.js`, which serves both the API and `client/dist`.
-- Secrets (`SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `DISCORD_WEBHOOK_URL`) are passed to the container as environment variables at runtime and never baked into the image. The public `VITE_*` values are build arguments, because Vite inlines them at build time.
+- Secrets (`SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `GEMINI_API_KEY_FALLBACK`, `DISCORD_WEBHOOK_URL`) are passed to the container as environment variables at runtime and never baked into the image. The public `VITE_*` values are build arguments, because Vite inlines them at build time.
 - `GET /health` is the container health check.
-- The AWS service and exact steps are added here when the app is deployed (Part 8).
+- On the VM, `deploy/compose.yml` runs the app and **Caddy**. Caddy is the only container with public ports (80/443). It gets and renews a Let's Encrypt certificate for the subdomain and forwards requests to the app.
+- The image is built on the laptop and copied with `docker save | ssh … docker load`, so the VM needs no source code or registry.
+- Step-by-step commands, with a reason for each: [`deploy/README.md`](deploy/README.md).
 
 ---
 
@@ -319,7 +323,7 @@ The demo account has two workspaces already set up.
 ### Suggested walkthrough
 
 1. **Grounded answer with a citation:** in **A**, ask *"What is the Project Falcon code?"* The answer should be **7731**, citing `falcon.md`.
-2. **Isolation:** switch to **B** and ask the same question in a new chat. The answer should be **"I don't know"**. The debug panel shows only B's workspace id and chunk ids.
+2. **Isolation:** switch to **B** and ask the same question in a new chat. The answer should be **"I don't know"**. Open the answer's details (pulse icon): the workspace id is B's, and no Falcon chunk is listed, because A's chunks are never even ranked.
 3. **Side-effect tool:** in A, ask *"Create a task to rotate the Falcon code by Friday."* A row appears in **Tasks** and a `save_task` row appears in the **Tool-call log**.
 4. **Read tool:** ask *"What tasks do I have?"* This calls `list_tasks`.
 4b. **Tool with no matching docs:** in **B**, ask *"Save a task: call the vendor Friday."* No document matches, but the task is still created, because retrieval never blocks tools.
@@ -338,7 +342,7 @@ These were cut on purpose to spend the time on isolation, retrieval quality and 
 - Password reset and custom refresh tokens (Supabase Auth handles sessions)
 - Message pagination, read receipts, chat renaming
 - Images and tables inside PDFs, and scanned PDFs (no OCR)
-- Streaming responses (planned as a stretch goal)
+- Streaming responses. The citation guard checks the **finished** answer and can replace all of it ("I don't know", fixed replies), so streaming tokens would show text the guard might then take back.
 
 ---
 
