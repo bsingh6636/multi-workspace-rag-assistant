@@ -1649,3 +1649,60 @@ button {
   color: var(--fg-muted);
   cursor: help;
 }
+
+/* ---------- Answer details (retrieval debug panel) ---------- */
+
+/* Keep Copy/Details visible while the panel is open. */
+.msg-details-open .msg-actions {
+  opacity: 1;
+}
+
+.msg-details {
+  max-width: 90%;
+  margin-top: 4px;
+  padding: 8px 12px;
+  overflow-x: auto; /* the table scrolls inside the panel on a phone, not the page */
+  font-size: 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+}
+
+.msg-details-line {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+
+.msg-details-line:last-child {
+  margin-bottom: 0;
+}
+
+.msg-details code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.msg-details-table {
+  width: 100%;
+  margin-bottom: 6px;
+  border-collapse: collapse;
+}
+
+.msg-details-table th,
+.msg-details-table td {
+  padding: 3px 8px 3px 0;
+  text-align: left;
+  vertical-align: top;
+  border-top: 1px solid var(--border-muted);
+}
+
+.msg-details-table th {
+  font-weight: 600;
+  color: var(--fg-muted);
+  border-top: 0;
+}
+
+.msg-details-table td:nth-child(3) {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+

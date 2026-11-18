@@ -69,6 +69,30 @@ export type Message = {
   error: string | null
   created_at: string
   tool_calls?: ToolCallSummary[] // assistant messages only
+  /** Assistant messages: what retrieval found (the Details panel). Null when retrieval didn't run. */
+  retrieval?: Retrieval | null
+  tokens_in?: number | null
+  tokens_out?: number | null
+  latency_ms?: number | null
+}
+
+/** messages.retrieval: every chunk the workspace-scoped search ranked, kept or not. */
+export type Retrieval = {
+  workspace_id: string
+  threshold: number
+  k: number
+  /** In rank order. filename, section and label were added in Part 7; older rows lack them. */
+  retrieved: {
+    chunk_id: string
+    similarity: number
+    kept: boolean
+    filename?: string
+    section?: string | null
+    label?: string | null
+  }[]
+  kept: number
+  /** Did the final answer cite at least one chunk? */
+  hit: boolean
 }
 
 /** POST /api/workspaces/:wsId/chats/:chatId/messages */

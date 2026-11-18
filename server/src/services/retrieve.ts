@@ -20,12 +20,20 @@ export type RetrievalRecord = {
   workspace_id: string;
   threshold: number;
   k: number;
-  retrieved: { chunk_id: string; similarity: number; kept: boolean }[];
+  // In rank order. filename/section/label were added in Part 7 (older rows lack them).
+  retrieved: {
+    chunk_id: string;
+    filename: string;
+    section: string | null;
+    similarity: number;
+    kept: boolean;
+    label: string | null; // c1, c2, … when kept, null below the threshold
+  }[];
   kept: number;
   hit: boolean; // set after the citation guard: did the answer cite anything?
 };
 
-type MatchRow = {
+export type MatchRow = {
   id: string;
   document_id: string;
   chunk_index: number;
@@ -53,13 +61,24 @@ export async function retrieve(
   });
   if (error) throw error;
 
-  const rows = (data ?? []) as MatchRow[];
-  const threshold = config.SIMILARITY_THRESHOLD;
+  return splitByThreshold(workspaceId, (data ?? []) as MatchRow[], config.SIMILARITY_THRESHOLD, TOP_K);
+}
+
+// Pure (unit-tested): the threshold keeps or drops each ranked row. Kept rows
+// become the prompt's chunks, labelled c1, c2, … in rank order. Every row,
+// kept or not, goes into the record saved for the debug panel.
+export function splitByThreshold(
+  workspaceId: string,
+  rows: MatchRow[],
+  threshold: number,
+  k: number,
+): { chunks: RetrievedChunk[]; retrieval: RetrievalRecord } {
   const kept = rows.filter((row) => row.similarity >= threshold);
+  const labelOf = new Map(kept.map((row, i) => [row.id, `c${i + 1}`]));
 
   return {
-    chunks: kept.map((row, i) => ({
-      label: `c${i + 1}`,
+    chunks: kept.map((row) => ({
+      label: labelOf.get(row.id)!,
       chunk_id: row.id,
       document_id: row.document_id,
       filename: row.filename,
@@ -70,11 +89,14 @@ export async function retrieve(
     retrieval: {
       workspace_id: workspaceId,
       threshold,
-      k: TOP_K,
+      k,
       retrieved: rows.map((row) => ({
         chunk_id: row.id,
+        filename: row.filename,
+        section: row.section,
         similarity: Number(row.similarity.toFixed(4)),
         kept: row.similarity >= threshold,
+        label: labelOf.get(row.id) ?? null,
       })),
       kept: kept.length,
       hit: false,
