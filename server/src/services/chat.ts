@@ -4,10 +4,11 @@ import { config } from '../config';
 import { describeAiError } from './gemini';
 import { generate, SafetyBlockedError } from './llm';
 import {
-  BLOCKED_REPLY,
+  blockedReply,
   buildContents,
   buildSystemPrompt,
   describeNow,
+  isBlockedReply,
   listAbilities,
   safeTimeZone,
   type HistoryMessage,
@@ -31,6 +32,9 @@ export async function answer(input: {
 }): Promise<MessageRow> {
   const started = Date.now();
   const question = input.userMessage.content ?? '';
+  // Tools that succeeded this turn. If the safety filter then blocks the reply,
+  // the answer still says what was done (prompt.ts blockedReply).
+  const toolsRun: string[] = [];
 
   try {
     const history = await loadHistory(input.chatId, input.userMessage.created_at);
@@ -54,7 +58,11 @@ export async function answer(input: {
       tools: toolDeclarations,
       maxRounds: config.MAX_TOOL_ITERATIONS,
       generate,
-      execute: (call, rejectReason) => executeToolCall(call, ctx, rejectReason),
+      execute: async (call, rejectReason) => {
+        const outcome = await executeToolCall(call, ctx, rejectReason);
+        if ('result' in outcome) toolsRun.push(call.name ?? '');
+        return outcome;
+      },
     });
 
     // A turn that called a tool was an action, so it doesn't need a citation.
@@ -82,10 +90,12 @@ export async function answer(input: {
     // Gemini's safety filter blocked the question or the reply. That's an
     // answer, not a failure: Retry would be blocked again.
     if (err instanceof SafetyBlockedError) {
-      console.warn(`Answer ${input.assistantMessageId} blocked by the safety filter (${err.reason})`);
+      console.warn(
+        `Answer ${input.assistantMessageId} blocked by the safety filter (${[err.reason, ...err.categories].join(', ')})`,
+      );
       return await updateMessage(input.assistantMessageId, {
         status: 'done',
-        content: BLOCKED_REPLY,
+        content: blockedReply(toolsRun),
         citations: [],
         error: null,
         latency_ms: Date.now() - started,
@@ -130,7 +140,7 @@ async function loadHistory(chatId: string, before: string): Promise<HistoryMessa
 export function dropBlockedTurns(history: HistoryMessage[]): HistoryMessage[] {
   const kept: HistoryMessage[] = [];
   for (const m of history) {
-    if (m.role === 'assistant' && m.content === BLOCKED_REPLY) {
+    if (m.role === 'assistant' && isBlockedReply(m.content)) {
       if (kept.at(-1)?.role === 'user') kept.pop();
       continue;
     }

@@ -36,11 +36,13 @@ export type LlmResult = {
 
 // Newer Gemini models don't block anything by default. Everything the model
 // writes can leave the app (a Discord post goes to a shared channel as the
-// bot), so harassment, hate and sexual content are blocked even at low
-// probability. Dangerous content is blocked at medium, so documents about
-// security or safety still work.
+// bot), so hate and sexual content are blocked even at low probability.
+// Harassment is blocked at medium: at low, a document with bossy injected text
+// ("ignore your instructions…") blocked most answers that retrieved it, and the
+// abusive posts from testing were blocked the same at either level.
+// Dangerous content is blocked at medium, so documents about security still work.
 const SAFETY_SETTINGS: SafetySetting[] = [
-  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE },
+  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
   { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE },
   { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE },
   { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
@@ -49,9 +51,20 @@ const SAFETY_SETTINGS: SafetySetting[] = [
 // Gemini's safety filter stopped the request or the reply. Not retried (the
 // same input is blocked again); the chat turns it into a fixed answer.
 export class SafetyBlockedError extends Error {
-  constructor(public reason: string) {
+  constructor(
+    public reason: string,
+    public categories: string[] = [], // e.g. ["HARASSMENT:MEDIUM"], for the log
+  ) {
     super(`Blocked by the safety filter (${reason})`);
   }
+}
+
+// The safety categories Gemini rated above NEGLIGIBLE, as "HARASSMENT:MEDIUM".
+export function flaggedCategories(res: Pick<GenerateContentResponse, 'promptFeedback' | 'candidates'>): string[] {
+  const ratings = res.candidates?.[0]?.safetyRatings ?? res.promptFeedback?.safetyRatings ?? [];
+  return ratings
+    .filter((r) => r.probability && r.probability !== 'NEGLIGIBLE')
+    .map((r) => `${String(r.category).replace('HARM_CATEGORY_', '')}:${r.probability}`);
 }
 
 const BLOCKED_FINISH_REASONS = new Set(['SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII']);
@@ -94,7 +107,7 @@ async function callModel(model: string, req: LlmRequest): Promise<LlmResult> {
   });
 
   const blocked = blockReasonOf(res);
-  if (blocked) throw new SafetyBlockedError(blocked);
+  if (blocked) throw new SafetyBlockedError(blocked, flaggedCategories(res));
 
   // Read the parts directly: res.text logs an SDK warning when the reply also
   // has function calls. Thought parts are the model's reasoning, not the answer.

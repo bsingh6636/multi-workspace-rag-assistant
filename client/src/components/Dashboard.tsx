@@ -1,10 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { ChecklistIcon, CommentDiscussionIcon, FileIcon, ToolsIcon } from '@primer/octicons-react'
 import { toast } from 'sonner'
 import { deleteRequest, errorMessage, getRequest, patchRequest, postRequest } from '../lib/http'
 import { nextDefaultName } from '../lib/workspaceNames'
-import type { Profile, Workspace } from '../types'
+import type { Profile, Workspace, WorkspaceCounts } from '../types'
 import ChatPanel from './ChatPanel'
 import DeleteWorkspaceDialog from './DeleteWorkspaceDialog'
 import DocumentsPanel from './DocumentsPanel'
@@ -20,11 +20,12 @@ type DialogKind = 'create' | 'rename' | 'delete' | null
 
 // The workspace sections. The active tab stays the same when the workspace changes.
 type Tab = 'chat' | 'documents' | 'tasks' | 'tool-calls'
-const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
+// count: which number from /counts the tab shows (Chat has none, like GitHub's Code tab).
+const TABS: { id: Tab; label: string; icon: ReactNode; count?: keyof WorkspaceCounts }[] = [
   { id: 'chat', label: 'Chat', icon: <CommentDiscussionIcon /> },
-  { id: 'documents', label: 'Documents', icon: <FileIcon /> },
-  { id: 'tasks', label: 'Tasks', icon: <ChecklistIcon /> },
-  { id: 'tool-calls', label: 'Tool calls', icon: <ToolsIcon /> },
+  { id: 'documents', label: 'Documents', icon: <FileIcon />, count: 'documents' },
+  { id: 'tasks', label: 'Tasks', icon: <ChecklistIcon />, count: 'openTasks' },
+  { id: 'tool-calls', label: 'Tool calls', icon: <ToolsIcon />, count: 'toolCalls' },
 ]
 
 // Logged-in shell: loads the user's workspaces, restores the last active one,
@@ -67,6 +68,26 @@ export default function Dashboard({ user }: { user: User }) {
   }
 
   const active = workspaces.find((ws) => ws.id === activeId)
+
+  // The tab counters. Tagged with their workspace, so counts that arrive after
+  // a workspace switch are never shown on the new one. Fetched when the
+  // workspace or tab changes, and when a panel changes something (onChange).
+  // A failed fetch keeps the old numbers: they're extra, not worth a toast.
+  const [counts, setCounts] = useState<{ wsId: string; counts: WorkspaceCounts } | null>(null)
+  const refreshCounts = useCallback(async () => {
+    if (!activeId) return
+    try {
+      const fresh = await getRequest<WorkspaceCounts>(`/workspaces/${activeId}/counts`)
+      setCounts({ wsId: activeId, counts: fresh })
+    } catch {
+      // Keep what's shown.
+    }
+  }, [activeId])
+  useEffect(() => {
+    refreshCounts()
+  }, [refreshCounts, tab])
+  const shownCounts = counts && counts.wsId === activeId ? counts.counts : null
+
   const allNames = workspaces.map((ws) => ws.name)
 
   // Switch right away in the UI, then remember it on the server.
@@ -164,15 +185,20 @@ export default function Dashboard({ user }: { user: User }) {
                 >
                   {t.icon}
                   {t.label}
+                  {t.count && shownCounts && shownCounts[t.count] > 0 && (
+                    <span className="counter" title={shownCounts[t.count].toLocaleString()}>
+                      {formatCount(shownCounts[t.count])}
+                    </span>
+                  )}
                 </button>
               ))}
             </nav>
 
             {/* key: a new workspace gets a fresh panel, so the old workspace's data never flashes. */}
-            {tab === 'chat' && <ChatPanel key={active.id} workspaceId={active.id} />}
-            {tab === 'documents' && <DocumentsPanel key={active.id} workspaceId={active.id} />}
-            {tab === 'tasks' && <TasksPanel key={active.id} workspaceId={active.id} />}
-            {tab === 'tool-calls' && <ToolCallsPanel key={active.id} workspaceId={active.id} />}
+            {tab === 'chat' && <ChatPanel key={active.id} workspaceId={active.id} onChange={refreshCounts} />}
+            {tab === 'documents' && <DocumentsPanel key={active.id} workspaceId={active.id} onChange={refreshCounts} />}
+            {tab === 'tasks' && <TasksPanel key={active.id} workspaceId={active.id} onChange={refreshCounts} />}
+            {tab === 'tool-calls' && <ToolCallsPanel key={active.id} workspaceId={active.id} onChange={refreshCounts} />}
           </>
         )}
       </main>
@@ -202,4 +228,10 @@ export default function Dashboard({ user }: { user: User }) {
       )}
     </div>
   )
+}
+
+// Like GitHub's counters: 999, then 1k, 1.2k, 12k.
+function formatCount(n: number): string {
+  if (n < 1000) return String(n)
+  return `${(n / 1000).toFixed(n < 10000 ? 1 : 0).replace(/\.0$/, '')}k`
 }

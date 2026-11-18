@@ -324,7 +324,7 @@ Entry format:
 - **Why:** The user confirmed that every attempt is recorded, a failed one with its reason, and asked for it to be shown in small text.
 
 ## 2026-11-18 06:38 IST: ⚠ AI mistake: the chat overflowed phone screens when a chat title is long
-- **Files:** `client/src/index.css`
+- **Files:** `client/src/index.css`, `client/src/components/TasksPanel.tsx` (tick icon 12px → 10px to fit the smaller circle)
 - **What:** The chat grid columns are `minmax(0, 1fr)` instead of `1fr` (desktop `240px minmax(0, 1fr)`, phone `minmax(0, 1fr)`). Now a long chat title is cut off with "…" as intended, instead of widening the whole chat. The new tool-call lines are block lines inside a list limited to 90% of the message width. Before, they were squeezed into a narrow column ("Posted to / Discord").
 - **Why:** Found in the Part 4 browser check (390px screenshot): with the title "Post this exact message to Discord: Test messa…", messages and the composer were cut off on the right.
   - A `1fr` grid column can't be narrower than its content, so the `nowrap` title set the width. The Part 3 check used a short title, so it didn't show up.
@@ -459,6 +459,29 @@ Entry format:
   - ⚠ AI mistake found by that test: my first Discord wording ("Not for questions about Discord ('can you post?')") made "can you post to discord?" get a free-text "Yes, I can…" instead of the fixed "What should I post…" reply. It competed with the prompt rule that already handles this, so I removed it. Re-run: "can you post to discord?" → the fixed reply, "post … at 6pm" → "I can't do that.", "post hello team to discord" → posted (faked).
   - Unit tests: 85 pass.
 
+## 2026-11-18 07:56 IST: Part 5 plan: dashboard tabs for Tasks and the tool-call log
+- **Files:** `docs/plans/part-5-dashboard.md`
+- **What:** Plan for Part 5. The protected layout, the header switcher, the chat history and the documents panel already exist (Parts 1–3). Part 5 adds two tabs: Tasks (title, due date with "Overdue" / "Due today" labels, when it was saved) and Tool calls (tool, status, latency, time, arguments, error, and the full arguments/result on expand, with a "Failed only" filter). Both read the routes added in Part 4 and remount when the workspace changes. No server or schema change.
+- **Why:** PLAN.md Part 5. Before this session, the user also asked me to check the other sessions' changes and the AI models: 85/85 unit tests, typecheck and lint pass, and `gemini-3.5-flash-lite`, `gemini-3.6-flash` and `gemini-embedding-001` each answered a one-line probe (the fallback's daily limit has reset).
+
+## 2026-11-18 08:00 IST: Part 5 code: Tasks and Tool calls tabs
+- **Files:** `client/src/types.ts`, `client/src/components/TasksPanel.tsx` (new), `client/src/components/ToolCallsPanel.tsx` (new), `client/src/components/Dashboard.tsx`, `client/src/index.css`
+- **What:**
+  - Two new dashboard tabs next to Chat and Documents, each remounted per workspace (`key={active.id}`) like the existing panels.
+  - **Tasks:** title, due date ("Due Fri, 20 Nov 2026") with an "Overdue" or "Due today" label against the browser's local date, and when it was saved. Refresh button, skeleton while loading, empty state with a hint. Read-only (tasks come from `save_task`).
+  - **Tool calls:** ✓/✕, tool name, status label for failures, latency, time, the arguments on one line, the error in red, and a native `<details>` with the full arguments and result as JSON. "Failed only" toggle and Refresh. A note when the newest-200 cap is hit.
+- **Why:** PLAN.md Part 5 (see `docs/plans/part-5-dashboard.md`). `due_date` is formatted from its Y-M-D parts because `new Date('2026-11-20')` is UTC midnight and shows the previous day west of UTC.
+
+## 2026-11-18 08:03 IST: Part 5 phone-width fixes found in the browser check
+- **Files:** `client/src/components/ToolCallsPanel.tsx`, `client/src/index.css`
+- **What:** Under 480px the tab icons are hidden, so all four tabs fit without the bar scrolling. A tool-call row's latency and time move from a right-hand column into the row's first line (after the tool name, pushed right, wrapping under it when there's no room), so the arguments line gets the full width.
+- **Why:** The 390px screenshots of the first build showed the tab bar scrolled, with "Chat" cut to "hat", and the latency/time column squeezing the arguments to about 20 characters. Found by my own screenshot check before handing over.
+
+## 2026-11-18 08:01 IST: Part 5 done: docs, PLAN.md ticks, results
+- **Files:** `PLAN.md`, `README.md`, `docs/plans/part-5-dashboard.md`
+- **What:** Ticked Part 5's three boxes. README: the dashboard line names the four tabs and what each shows. The repository layout lists the panels, `lib/useList.ts` and `ui/RowsSkeleton`. The plan's Results section records the checks (29/29 browser and API checks, screenshots, the one failed check that was a bug in my test).
+- **Why:** End of Part 5 (CLAUDE.md session workflow). No design decision changed, so DESIGN.md is unchanged.
+
 ## 2026-11-18 08:07 IST: "Load more" pagination for documents, tasks and the tool-call log
 - **Files:** `docs/plans/pagination.md`, `server/src/lib/pagination.ts`, `server/src/controllers/document.controller.ts`, `server/src/controllers/task.controller.ts`, `server/src/controllers/toolCall.controller.ts`, `server/test/pagination.test.ts`, `client/src/lib/useList.ts`, `client/src/components/ui/LoadMore.tsx`, `client/src/components/DocumentsPanel.tsx`, `client/src/components/TasksPanel.tsx`, `client/src/components/ToolCallsPanel.tsx`, `client/src/types.ts`, `client/src/index.css`, `docs/DESIGN.md`, `PLAN.md`, `README.md`, `docs/plans/part-5-dashboard.md`
 - **What:**
@@ -471,3 +494,120 @@ Entry format:
   - Unit: 9 new tests in `server/test/pagination.test.ts` (cursor round-trip; bad limit; foreign or crafted cursors, including attempts to add a `workspace_id` or `id` condition to the filter, are rejected with 400; slicing and `nextCursor`). 94 server tests pass. Client and server type-check.
   - Live, read-only against Supabase: a script called the three real controller functions with `limit=3` and followed `nextCursor` to the end. Documents (5 rows, 2 pages), tasks (6 rows, 2 pages) and tool calls (23 rows, 8 pages) matched one full ordered query exactly, with no duplicates and `total` only on page 1. A bad cursor got 400. `failed=true` couldn't be checked on real rows, because the database has no failed tool calls; it returned an empty first page with total 0.
   - Not done: clicking Load more in the browser.
+
+## 2026-11-18 08:08 IST: Part 6 plan: seed data and hardening checks
+- **Files:** `docs/plans/part-6-hardening.md`
+- **What:** Plan for Part 6. Adds a `/seed` folder (two Falcon docs for workspace A, two unrelated docs plus a prompt-injection doc for B) and an idempotent `npm run seed` script that creates the demo account from `SEED_EMAIL`/`SEED_PASSWORD` and ingests the docs with the real pipeline. Then runs the checks PLAN.md lists: injection, invalid Gemini key, re-upload, secrets in the client bundle, and secrets in server logs.
+- **Why:** PLAN.md Part 6. Another agent is adding pagination at the same time, so this part doesn't touch the list controllers, `lib/pagination.ts`, `useList` or the panels.
+
+## 2026-11-18 08:09 IST: Seed documents and the seed script
+- **Files:** `seed/*` (new), `server/src/scripts/seed.ts` (new), `server/package.json` (`seed` script), `.env.example`
+- **What:** Five invented seed docs (see the Part 6 plan, section A). `npm run seed` creates or updates the demo user from `SEED_EMAIL`/`SEED_PASSWORD`, creates "A – Falcon" and "B – Other", ingests the docs through `ingestDocument()` (re-runs skip them by content hash) and opens the demo on A. `.env.example` lists the two optional variables.
+- **Why:** PLAN.md Part 6, first item. The credentials come from the environment so no password is committed.
+
+## 2026-11-18 08:15 IST: ⚠ AI mistake: a Supabase Auth hiccup signed users out (401 instead of 503)
+- **Files:** `server/src/middleware/auth.ts`, `server/test/auth.test.ts` (new)
+- **What:** `requireAuth` now tells the two kinds of `getUser` failure apart. When Supabase Auth can't be reached or answers 5xx (`isAuthRetryableFetchError`, or a status of 500 and above), the response is **503** "Can't check your session right now. Please try again.", with one log line (no token). Only a token Auth actually rejects gets 401. The decision is a small exported function, `authFailureStatus`, with unit tests.
+- **Why:** ⚠ AI mistake (Part 1 auth middleware: every error became 401). Found in the Part 6 hardening run. One request to a test server took 11 s and came back 401 "Invalid or expired session" for a token that worked a second earlier and right after. The client's `http.ts` signs the user out on any 401, so a short Auth outage or network blip would log everyone out. A 503 is already retried for GETs and shown as "Can't reach the server" by the client.
+
+## 2026-11-18 08:25 IST: Safety filter: harassment blocked at MEDIUM, not LOW (false positives on injected documents)
+- **Files:** `server/src/services/llm.ts`, `docs/DESIGN.md`
+- **What:** Harassment now blocks at MEDIUM and above. Hate and sexually explicit content stay at LOW, and dangerous content stays at MEDIUM.
+- **Why:** Found by the Part 6 injection check. In workspace B, every question whose retrieval included `seed/injection.txt` usually came back "I can't help with that." That covers "What do the vendor notes say?" and the demo's "What is the Project Falcon code?" (the injection chunk mentions the code, so it passes the threshold). The doc's imperative text is rated HARASSMENT:LOW.
+- **Evidence (live Gemini, same prompt as the app):**
+  - With harassment at LOW, 5 of 6 replies to the two B questions were blocked. At MEDIUM, 0 of 6.
+  - Unblocked, the model answered the vendor facts with a citation and ignored the injected instructions. In B it said "I don't know" for the Falcon code.
+  - The 10 texts posted to Discord in the user's 06:48–06:56 test (read from `tool_calls`, never printed) gave identical outcomes at LOW and MEDIUM for harassment. The one that was blocked is still blocked, through sexual content at LOW. So the change loses nothing on the cases the 07:03 LOW setting was added for.
+
+## 2026-11-18 08:27 IST: Tasks can be marked done (Tasks tab + complete_task tool) and deleted (Tasks tab only)
+- **Files:** `docs/plans/task-actions.md`, `sql/schema.sql` (+ Supabase migration `tasks_done_at`), `server/src/controllers/task.controller.ts`, `server/src/routes/task.routes.ts`, `server/src/services/tools.ts`, `server/src/services/prompt.ts`, `server/test/tools.test.ts`, `client/src/types.ts`, `client/src/components/TasksPanel.tsx`, `client/src/components/DeleteTaskDialog.tsx`, `client/src/components/ChatMessage.tsx`, `client/src/index.css`, `docs/DESIGN.md`
+- **What:**
+  - New column `tasks.done_at`. `PATCH …/tasks/:taskId {done}` and `DELETE …/tasks/:taskId`, both scoped by the URL's workspace. `GET …/tasks?done=false|true`.
+  - Tasks tab: a done checkbox, a delete button with a confirm dialog, and "Show done".
+  - New tool `complete_task({ task_id })`. `list_tasks` returns ids and hides done tasks unless `include_done`.
+  - Chat shows "Marked a task done", and "Listed tasks" gets a hover hint pointing to the Tasks tab.
+- **Why:** The user asked for done/update/delete and agreed to: done in the tab and in chat, delete in the tab only. Delete isn't a tool because it can't be undone and retrieved text is untrusted (prompt injection). Rename isn't built. The client request timeout I proposed is deferred: without a server-side deadline for the whole answer it would leave a pending answer the client never re-checks (details in the plan).
+- **Testing:**
+  - Unit: the registry test now expects four tools ("no delete tool, on purpose"). New tests: complete_task rejects a non-uuid or an extra `workspace_id`, and a `delete_task` call is `unknown_tool`. 98 server tests pass. Client and server type-check.
+  - Database (one temporary task, deleted afterwards; 15 checks): PATCH done/undone, `?done=false|true`, PATCH and DELETE through another workspace's URL → 404, malformed id → 404, bad body → 400, complete_task → done then `already_done` on repeat, from another workspace → "not found", list_tasks hides done tasks unless `include_done`, DELETE → 204 then 404.
+  - Live Gemini, tools faked: "I called the vendor, mark it done" → list_tasks then complete_task with the right id; "list all my tasks" → no ids in the reply; "delete all my tasks" → "I can't do that." plus the abilities (now including "mark tasks as done"); "mark the dentist task done" (no such task) → says it couldn't find one, no guess.
+  - Not done: clicking the checkbox and delete in the browser.
+- **Found while building:** "list all tasks" got "I can't help with that." three times (08:25–08:26). Not caused by this change, which wasn't live yet. Gemini's sexual-content filter (LOW threshold) blocked the reply that repeated the user's old test task titles (a bodily-function word). The Part 6 session keeps that threshold and confirmed deleting those tasks is the fix, which the new Tasks-tab delete now allows.
+
+## 2026-11-18 08:26 IST: The safety-block log line names the flagged categories
+- **Files:** `server/src/services/llm.ts`, `server/src/services/chat.ts`
+- **What:** `SafetyBlockedError` also carries the non-negligible safety ratings (e.g. `HARASSMENT:MEDIUM`), and the "blocked by the safety filter" log line prints them. `blockReasonOf` is unchanged.
+- **Why:** The Part 6 run had a block whose log only said "SAFETY", so there was no way to tell which category fired without re-running the prompt by hand. Only category names and levels are logged, never message text.
+
+## 2026-11-18 08:28 IST: Part 6 done: README demo account and walkthrough, PLAN.md ticks, results
+- **Files:** `README.md`, `PLAN.md`, `docs/plans/part-6-hardening.md`
+- **What:**
+  - README:
+    - New "Seed the demo account" setup step.
+    - The test table lists the real seed files.
+    - Walkthrough step 2 says to use a new chat, and step 6 asks "What do the vendor notes say?" (the question the run checked).
+    - Two new defenses: the safety filter, and 503 rather than sign-out when Supabase Auth is unreachable.
+  - PLAN.md: Part 6 boxes ticked.
+  - Plan file: results recorded.
+- **Why:** End of Part 6.
+
+## 2026-11-18 08:46 IST: Removed the test data that tripped the safety filter; a blocked reply after a tool ran now says what was done
+- **Files:** Supabase data only (see below); `server/src/services/prompt.ts`, `server/src/services/chat.ts`, `server/src/services/citations.ts`, `server/test/tools.test.ts`, `server/test/citations.test.ts`, `docs/DESIGN.md`
+- **What:**
+  - **Data (at the user's request):** deleted the 3 tasks, the 2 chats, 5 question/answer pairs in another chat, and the tool-call log rows containing the bodily-function word from the user's early testing. Checked afterwards: none left.
+  - **Code:** when Gemini's safety filter blocks the reply *after* a tool succeeded, the answer is no longer a bare "I can't help with that.". It says what was done ("Your tasks were loaded, but the content filter blocked my reply…") and where to see the result. With no successful tool, it's unchanged. Both forms are still dropped from later history.
+- **Why:** "list all tasks" got "I can't help with that." three times (08:25–08:26): list_tasks worked, but the sexual-content filter (kept at LOW by the Part 6 session) blocked the reply that repeated those task titles. The user asked to remove the data and fix the "blockage". The bare message made a working feature look broken.
+- **Also:** "what do you have" (and the cut-off "what do u ha" the user sent) is now small talk, so the assistant's answer about what it can do isn't replaced by "I don't know" (CLAUDE.md rule 5). "what do you have on Falcon?" is still a document question.
+- **Testing:** 7 new unit tests: `blockedReply` with no tool, an unknown tool, a repeated tool and two tools; the longer blocked reply is dropped from history like the short one; 3 new small-talk phrasings and 2 that must stay document questions. 105 server tests pass. The filter's block can't be reproduced on demand (it isn't consistent), so the new wording wasn't seen live.
+
+## 2026-11-18 08:50 IST: Tasks tab: round "complete" button in place of the square checkbox, aligned with the title
+- **Files:** `client/src/components/TasksPanel.tsx`, `client/src/index.css`, `docs/plans/task-actions.md`
+- **What:** The done control is now a round button (`role="checkbox"`), like Todoist or Microsoft To Do. A faint tick shows on hover; when done it's a filled green circle with a white tick. Its tooltip reads "Mark as done" or "Mark as not done". It lines up with the title line, not the middle of the row.
+- **Why:** The user found the square checkbox confusing (it reads as "select row") and saw it was misaligned (screenshot 08:48). It was centered between the title and the meta line. Select-then-"Mark done" was considered and rejected: it turns the usual one-task case into two clicks, and the chat already handles bulk.
+
+## 2026-11-18 08:54 IST: "mark as done" asked "Which task?" without showing the tasks it had just listed
+- **Files:** `server/src/services/tools.ts`, `docs/plans/task-actions.md`
+- **Event (user's live test, 08:51):** "reminder to pee after 5 min" was saved. "delete this reminder" got "I can't do that." plus the abilities, which is correct: deleting is only in the Tasks tab. Then "mark as done" ran `list_tasks` (4 open tasks, in the tool-call log at 08:51:47) and replied only "Which task would you like to mark as done?". The user saw the "Listed tasks" chip but no list, and asked why it listed tasks and then didn't show them.
+- **Cause:** `complete_task`'s description said "if several match or none does, ask the user". It didn't say to show the choices. Replayed against Gemini with the same prompt and tools: a bare "mark as done" listed the titles 1 time in 3. The other 2 times it asked "which task?" with nothing to pick from, once telling the user to "use the list tasks tool".
+- **What:** the description now says: when the user doesn't say which task and the recent messages don't make it clear (it/this right after one task was discussed), call `list_tasks` and ask which one, listing the open titles (never ids). Never tell the user to call a tool.
+- **Testing:** replayed against Gemini (tool results faked from the real 08:51 list), 3 runs per case, 15 runs in all.
+  - The user's exact history + "mark as done": 3/3 call `list_tasks` and ask which one, listing all 4 titles.
+  - A bare "mark as done": 3/3 list the titles (1/3 before the fix).
+  - Right after the reminder was discussed, without the earlier "list all tasks" turn: 3/3 mark that reminder done.
+  - "drink water is done": 3/3 mark the right task.
+  - No ids in any reply. 105 unit tests pass.
+
+## 2026-11-18 09:01 IST: Tasks tab: the round done button sat 2–3px above the title text ⚠ AI mistake
+- **Files:** `client/src/index.css`, `client/src/components/TasksPanel.tsx` (tick icon 12px → 10px to fit the smaller circle)
+- **What:** The circle is now 16px (it was 18px), the same size as GitHub's row checkbox. It's centred on the title's letters, not on the top of its 21px line.
+- **Why:** The 08:50 change set the circle's position by eye, and that was wrong. The user noticed it in a screenshot (08:59) and compared it with GitHub's pull-request list (09:00). Measured in pixels: the 18px circle ran from y 283 to 300, but the title's centre is around y 294, so the circle stuck out above the text. GitHub's 16px box is centred on its title's capitals.
+
+## 2026-11-18 09:08 IST: GitHub-style counters on the Documents, Tasks and Tool calls tabs
+- **Files:** `docs/plans/tab-counts.md` (new), `server/src/controllers/workspace.controller.ts`, `server/src/routes/workspace.routes.ts`, `client/src/types.ts`, `client/src/components/Dashboard.tsx`, `client/src/components/ChatPanel.tsx`, `client/src/components/DocumentsPanel.tsx`, `client/src/components/TasksPanel.tsx`, `client/src/components/ToolCallsPanel.tsx`, `client/src/index.css`, `docs/DESIGN.md`
+- **What:**
+  - New `GET /api/workspaces/:wsId/counts` returns `{ documents, openTasks, toolCalls }`: three head-only count queries, scoped by the URL's workspace.
+  - The tabs show them in a Primer counter. A 0 is hidden and 1000+ shows as "1k". Chat has no counter.
+  - The Dashboard refetches the counts when the workspace or tab changes, and when a panel reports a change (send/Retry, upload/delete, done/delete/Refresh).
+- **Why:** The user asked for tab counts "same as" GitHub's repo tabs (e.g. "Pull requests 3").
+
+## 2026-11-18 09:08 IST: "list all tasks" sometimes left out done tasks; a misspelled "create task for …" was saved as the title
+- **Files:** `server/src/services/tools.ts`, `docs/plans/task-actions.md`
+- **Event (user's live test, 09:04–09:06, read from `messages` and `tool_calls`):**
+  - "list all tasks" / "list all task" ran `list_tasks` with `include_done: true` twice (09:04:55, 09:05:14: 6 and 7 tasks, open and done). The same words ran without it twice (08:50:44, 09:06:04: open tasks only). The same question got different lists.
+  - "cerarte task for waking up" saved the title "cerarte task for waking up". "create new task to cook food" saved "cook food" correctly; the misspelled "create" wasn't recognised as request words.
+- **Cause:**
+  - `include_done` said "only when the user asks about done or completed tasks", and `limit` said "use 50 when the user asks for all tasks". So "all" was tied to the page size, and whether done tasks were included was a guess.
+  - The title description didn't say to drop the request words.
+- **What:**
+  - `include_done` is now true when the user asks for *all* tasks ("all tasks", "all my tasks", "every task") or about done ones. That matches the Tasks tab, where "All tasks" means including done. "My tasks" / "what's pending" stay open only.
+  - The title description says to keep only the task itself and drop request words such as "create/add a task", "new task to", "remind me to", even when misspelled.
+- **Testing:** replayed against Gemini with tool results faked (2 open tasks, 1 done).
+  - **Before:** "list all tasks", "list all task" and "list all my task" included done tasks 0 times in 6 runs. "cerarte task for waking up" kept the request words in the title 1 time in 2.
+  - **After:** the three "all" phrasings sent `include_done: true` 9/9, and each reply marked tasks open/pending or done. "list my tasks" and "what is pending" stayed open only, 6/6.
+  - **Not tested yet:** the title fix ("cerarte task for waking up", "create new task to cook food", "remind me to call mom tomorrow"). The run hit the daily free-tier quota for `gemini-3.5-flash-lite` (500 requests a day; resets in about 4h17m). Retest it after the reset.
+  - Server type check passes; 105 unit tests pass.
+
+## 2026-11-18 09:18 IST: Info icon on "Listed tasks" shows gray, not green
+- **Files:** client/src/index.css
+- **What:** `.msg-tool svg` → `.msg-tool > svg`, so only the ✓/✕ status icon gets the success/danger colour and the 4px right margin.
+- **Why:** ⚠ AI mistake. Noticed in the user's screenshot: the ⓘ hint was green like the ✓. `.msg-tool svg` (0,1,1) also matched the SVG inside `.msg-tool-info` and beat that span's `color: var(--fg-muted)`, so a hint looked like a second success mark.

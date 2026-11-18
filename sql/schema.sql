@@ -81,6 +81,7 @@ create table tasks (
   workspace_id           uuid not null references workspaces(id) on delete cascade,
   title                  text not null,
   due_date               date,
+  done_at                timestamptz,          -- null = open; set when marked done
   created_by_message_id  uuid references messages(id) on delete set null,
   created_at             timestamptz not null default now()
 );

@@ -6,7 +6,7 @@ import { buildSystemPrompt, describeNow, listAbilities, safeTimeZone } from '../
 import { MAX_CALLS_PER_ROUND, runToolLoop } from '../src/services/toolLoop';
 import { blockReasonOf } from '../src/services/llm';
 import { dropBlockedTurns } from '../src/services/chat';
-import { BLOCKED_REPLY } from '../src/services/prompt';
+import { BLOCKED_REPLY, blockedReply } from '../src/services/prompt';
 import {
   discordSourceError,
   executeToolCall,
@@ -36,9 +36,9 @@ async function execute(call: FunctionCall, rejectReason?: string) {
 }
 
 describe('tool declarations', () => {
-  test('declare exactly the three allowed tools', () => {
+  test('declare exactly the four allowed tools (no delete tool, on purpose)', () => {
     const names = toolDeclarations[0].functionDeclarations!.map((d) => d.name);
-    assert.deepEqual(names, ['save_task', 'list_tasks', 'send_discord_summary']);
+    assert.deepEqual(names, ['save_task', 'list_tasks', 'complete_task', 'send_discord_summary']);
   });
 
   test('no tool takes a workspace_id, and extra arguments are not allowed', () => {
@@ -107,6 +107,20 @@ describe('executeToolCall', () => {
     assert.equal((await execute({ name: 'save_task', args: { title: '   ' } })).log.status, 'invalid_args');
     assert.equal((await execute({ name: 'list_tasks', args: { limit: 500 } })).log.status, 'invalid_args');
     assert.equal((await execute({ name: 'send_discord_summary', args: {} })).log.status, 'invalid_args');
+  });
+
+  test('complete_task needs a real uuid and takes no workspace_id', async () => {
+    const id = '0a8a5a93-980e-4a3d-9a69-b1bc940d0146';
+    assert.equal((await execute({ name: 'complete_task', args: {} })).log.status, 'invalid_args');
+    assert.equal((await execute({ name: 'complete_task', args: { task_id: 'Call vendor' } })).log.status, 'invalid_args');
+    const { log } = await execute({ name: 'complete_task', args: { task_id: id, workspace_id: 'someone-elses' } });
+    assert.equal(log.status, 'invalid_args');
+    assert.equal(log.workspace_id, 'ws-1');
+  });
+
+  test('there is no delete tool: a delete_task call is an unknown tool', async () => {
+    const { log } = await execute({ name: 'delete_task', args: { task_id: 'x' } });
+    assert.equal(log.status, 'unknown_tool');
   });
 
   test('a rejected call is logged as error and not run', async () => {
@@ -298,5 +312,25 @@ describe('safety filter', () => {
       { role: 'user' as const, content: 'what can you do' },
     ];
     assert.deepEqual(dropBlockedTurns(history), [history[0], history[1], history[4]]);
+  });
+
+  test('a reply blocked after a tool worked says what was done', () => {
+    assert.equal(blockedReply([]), BLOCKED_REPLY);
+    assert.equal(blockedReply(['unknown_thing']), BLOCKED_REPLY);
+    const text = blockedReply(['list_tasks', 'list_tasks']);
+    assert.equal(
+      text,
+      'Your tasks were loaded, but the content filter blocked my reply. You can see the result in the Tasks or Tool calls tab.',
+    );
+    assert.match(blockedReply(['list_tasks', 'complete_task']), /^Your tasks were loaded\. The task was marked done, but/);
+  });
+
+  test('that longer blocked reply is left out of later history too', () => {
+    const history = [
+      { role: 'user' as const, content: 'list all tasks' },
+      { role: 'assistant' as const, content: blockedReply(['list_tasks']) },
+      { role: 'user' as const, content: 'thanks' },
+    ];
+    assert.deepEqual(dropBlockedTurns(history), [history[2]]);
   });
 });

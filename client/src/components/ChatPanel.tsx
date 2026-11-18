@@ -8,7 +8,9 @@ import ChatMessage from './ChatMessage'
 // Chat for the active workspace: the chat list on the left, the conversation and
 // composer on the right. Dashboard renders it with key={workspaceId}, so another
 // workspace's chats can never show here.
-export default function ChatPanel({ workspaceId }: { workspaceId: string }) {
+// onChange: an answer may have saved or completed a task and logged tool calls,
+// so the Dashboard refetches its tab counts.
+export default function ChatPanel({ workspaceId, onChange }: { workspaceId: string; onChange: () => void }) {
   const [chats, setChats] = useState<Chat[]>([])
   const [loadingChats, setLoadingChats] = useState(true)
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
@@ -150,6 +152,7 @@ export default function ChatPanel({ workspaceId }: { workspaceId: string }) {
       if (!wasSaved) changeDraft(content, chatId)
     } finally {
       setSending(false)
+      onChange()
     }
   }
 
@@ -174,6 +177,8 @@ export default function ChatPanel({ workspaceId }: { workspaceId: string }) {
     } catch (err) {
       toast.error(`Retry failed: ${errorMessage(err)}`)
       if (activeChatId) openChat(activeChatId)
+    } finally {
+      onChange()
     }
   }
 

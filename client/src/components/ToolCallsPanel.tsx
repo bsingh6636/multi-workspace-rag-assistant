@@ -16,7 +16,8 @@ const FAILED_LABELS: Record<Exclude<ToolCallStatus, 'success'>, string> = {
 // "Failed only" asks the server for failures (?failed=true), so paging and the
 // count cover all of them, not just the rows loaded so far. Each row expands to
 // the full arguments and result. Dashboard renders it with key={workspaceId}.
-export default function ToolCallsPanel({ workspaceId }: { workspaceId: string }) {
+// onChange (on Refresh) makes the Dashboard refetch its tab counts.
+export default function ToolCallsPanel({ workspaceId, onChange }: { workspaceId: string; onChange: () => void }) {
   const [failedOnly, setFailedOnly] = useState(false)
   const list = usePagedList<ToolCallRow>(
     `/workspaces/${workspaceId}/tool-calls${failedOnly ? '?failed=true' : ''}`,
@@ -32,7 +33,15 @@ export default function ToolCallsPanel({ workspaceId }: { workspaceId: string })
             <input type="checkbox" checked={failedOnly} onChange={(e) => setFailedOnly(e.target.checked)} />
             Failed only
           </label>
-          <button type="button" className="btn btn-sm" onClick={refresh} disabled={loading || refreshing}>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              refresh()
+              onChange()
+            }}
+            disabled={loading || refreshing}
+          >
             <SyncIcon />
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>

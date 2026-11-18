@@ -17,7 +17,8 @@ const MAX_BYTES = 5 * 1024 * 1024
 // Documents in the active workspace: list (newest first, a page at a time),
 // upload (button or drag-and-drop) and delete. Dashboard renders it with key={workspaceId}, so switching workspaces
 // mounts a fresh panel and the previous workspace's list never shows.
-export default function DocumentsPanel({ workspaceId }: { workspaceId: string }) {
+// onChange (after uploads or a delete) makes the Dashboard refetch its tab counts.
+export default function DocumentsPanel({ workspaceId, onChange }: { workspaceId: string; onChange: () => void }) {
   const [uploading, setUploading] = useState<string[]>([]) // filenames in progress
   const [dragging, setDragging] = useState(false)
   const [toDelete, setToDelete] = useState<DocumentRow | null>(null)
@@ -60,6 +61,7 @@ export default function DocumentsPanel({ workspaceId }: { workspaceId: string })
         setUploading((list) => list.filter((name) => name !== file.name))
       }
     }
+    onChange()
   }
 
   async function deleteDocument() {
@@ -67,6 +69,7 @@ export default function DocumentsPanel({ workspaceId }: { workspaceId: string })
     await deleteRequest(`${base}/${toDelete.id}`)
     setDocuments((list) => list.filter((d) => d.id !== toDelete.id))
     setTotal((n) => Math.max(0, n - 1))
+    onChange()
     toast.success(`Deleted “${toDelete.filename}”`)
     setToDelete(null)
   }

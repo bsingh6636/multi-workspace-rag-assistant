@@ -88,6 +88,8 @@ export type Task = {
   title: string
   /** Plain date, YYYY-MM-DD, or null when no due date was given. */
   due_date: string | null
+  /** When it was marked done; null while it's open. */
+  done_at: string | null
   created_by_message_id: string | null
   created_at: string
 }
@@ -115,4 +117,11 @@ export type ToolCallRow = {
 export type Profile = {
   user: { id: string; email?: string }
   last_workspace_id: string | null
+}
+
+/** GET /api/workspaces/:wsId/counts: the numbers on the dashboard tabs. */
+export type WorkspaceCounts = {
+  documents: number
+  openTasks: number
+  toolCalls: number
 }

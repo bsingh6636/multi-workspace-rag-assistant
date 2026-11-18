@@ -72,7 +72,10 @@ const saveTask = defineTool({
       .min(1)
       .max(200)
       .describe(
-        'What needs to be done, as a short phrase. If the user gave a time, end with it as a clock time, e.g. "Drink water at 21:58". There is no separate time field.',
+        'What needs to be done, as a short phrase: only the task itself, without the request words ("create a task", ' +
+          '"add task", "new task to", "remind me to", "set a reminder for"), even if they are misspelled: ' +
+          '"creat task for waking up" → "Wake up". If the user gave a time, end with it as a clock time, e.g. ' +
+          '"Drink water at 21:58". There is no separate time field.',
       ),
     due_date: z.iso
       .date()
@@ -107,9 +110,11 @@ const saveTask = defineTool({
 
 const listTasks = defineTool({
   description:
-    "List this workspace's tasks, newest first, with their due dates. Read-only. Call it for any question about " +
-    'tasks or reminders: "show my tasks", "what\'s pending", "what\'s due today", "when do I need to …", "did I save …". ' +
-    'Answer from its result, never from earlier messages.',
+    "List this workspace's open tasks (or all tasks, with include_done), newest first, with their due dates. " +
+    'Read-only. Call it for any question about ' +
+    'tasks or reminders: "show my tasks", "what\'s pending", "what\'s due today", "when do I need to …", "did I save …", ' +
+    'and before complete_task, to find the task_id. Answer from its result, never from earlier messages. ' +
+    'task_id is only for tool calls: never show it to the user.',
   ability: "list this workspace's tasks and their due dates",
   schema: z.strictObject({
     limit: z
@@ -119,16 +124,74 @@ const listTasks = defineTool({
       .max(50)
       .optional()
       .describe('How many tasks to return, newest first (default 10). Use 50 when the user asks for all tasks.'),
+    include_done: z
+      .boolean()
+      .optional()
+      .describe(
+        'Also return tasks already marked done. Set it to true whenever the user asks for ALL tasks ("all tasks", ' +
+          '"all my tasks", "every task", however spelled) or about done or completed tasks. Leave it out for open ' +
+          'or pending tasks ("my tasks", "what\'s pending", "what\'s due"). When true, say in the reply which tasks are done.',
+      ),
   }),
-  async run({ limit }, ctx) {
-    const { data, error } = await supabase
+  async run({ limit, include_done }, ctx) {
+    let query = supabase
       .from('tasks')
-      .select('title, due_date, created_at')
+      .select('id, title, due_date, done_at, created_at')
       .eq('workspace_id', ctx.workspaceId)
       .order('created_at', { ascending: false })
       .limit(limit ?? 10);
+    if (!include_done) query = query.is('done_at', null);
+    const { data, error } = await query;
     if (error) throw error;
-    return { count: data.length, tasks: data };
+    const tasks = data.map((t) => ({
+      task_id: t.id,
+      title: t.title,
+      due_date: t.due_date,
+      done: t.done_at !== null,
+      created_at: t.created_at,
+    }));
+    return { count: tasks.length, tasks };
+  },
+});
+
+// Marking done is easy to undo (untick in the Tasks tab), so the model may do
+// it. Deleting can't be undone, so there's deliberately no delete tool: retrieved
+// document text is untrusted, and "delete all tasks" in a document must never
+// be able to cause it (docs/plans/task-actions.md).
+const completeTask = defineTool({
+  description:
+    'Mark one task in this workspace as done. Use it when the user says a task is done, finished or completed, or ' +
+    'asks to mark, tick or check it off. Get the task_id from list_tasks first, and pick the task whose title matches ' +
+    'what the user said, or the one task the last messages were about when they say "it" or "this". If they did not ' +
+    'say which, or several match, or none does, do not guess: call list_tasks and ask which one, listing the open task ' +
+    'titles from its result (never the ids) so they can pick. Never tell the user to call a tool. Call it once per task.',
+  ability: 'mark tasks as done',
+  schema: z.strictObject({
+    task_id: z.uuid().describe('The task_id from list_tasks'),
+  }),
+  async run({ task_id }, ctx) {
+    // Scoped by the server's workspace id (hard rule 5): another workspace's
+    // task id finds nothing. Only an open task is updated, so a Retry that
+    // repeats the call reports already_done instead of changing the time.
+    const { data: updated, error } = await supabase
+      .from('tasks')
+      .update({ done_at: new Date().toISOString() })
+      .eq('id', task_id)
+      .eq('workspace_id', ctx.workspaceId)
+      .is('done_at', null)
+      .select('id, title');
+    if (error) throw error;
+    if (updated.length > 0) return { task_id: updated[0].id, title: updated[0].title, done: true };
+
+    const { data: existing, error: findError } = await supabase
+      .from('tasks')
+      .select('id, title')
+      .eq('id', task_id)
+      .eq('workspace_id', ctx.workspaceId)
+      .maybeSingle<{ id: string; title: string }>();
+    if (findError) throw findError;
+    if (!existing) throw new ToolError('No task with that task_id in this workspace. Call list_tasks to get the ids.');
+    return { task_id: existing.id, title: existing.title, done: true, already_done: true };
   },
 });
 
@@ -184,6 +247,7 @@ const sendDiscordSummary = defineTool({
 const TOOLS = new Map<string, ToolDefinition<z.ZodType>>([
   ['save_task', saveTask as ToolDefinition<z.ZodType>],
   ['list_tasks', listTasks as ToolDefinition<z.ZodType>],
+  ['complete_task', completeTask as ToolDefinition<z.ZodType>],
   ['send_discord_summary', sendDiscordSummary as ToolDefinition<z.ZodType>],
 ]);
 

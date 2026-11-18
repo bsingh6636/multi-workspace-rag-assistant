@@ -170,6 +170,9 @@ describe('isSmallTalk', () => {
     'hi , who are yo u',
     'Hey! What can you do?',
     'hello there',
+    'what do you have?',
+    'what do u ha',
+    'What does this chat offer',
   ]) {
     test(`"${msg}" is small talk`, () => assert.equal(isSmallTalk(msg), true));
   }
@@ -183,6 +186,8 @@ describe('isSmallTalk', () => {
     'what ability of the Falcon team do you have',
     'history of Falcon',
     '???',
+    'what do you have on Falcon?',
+    'what do you have to say about the launch',
   ]) {
     test(`"${msg}" is not small talk`, () => assert.equal(isSmallTalk(msg), false));
   }

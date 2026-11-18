@@ -1462,13 +1462,13 @@ button {
   overflow-wrap: anywhere;
 }
 
-.msg-tool svg {
+.msg-tool > svg {
   margin-right: 4px;
   vertical-align: text-bottom;
   color: var(--success);
 }
 
-.msg-tool-failed svg {
+.msg-tool-failed > svg {
   color: var(--danger);
 }
 
@@ -1597,4 +1597,55 @@ button {
   .tab svg {
     display: none;
   }
+}
+
+/* Tasks tab: the round "complete" button, and a done task's title struck
+   through. It sits level with the title, not in the middle of the two-line row.
+   The title line is 21px (14px × 1.5) and its letters sit slightly below that
+   line's middle, so a 16px circle needs 3px on top (not 2.5) to centre on them,
+   like GitHub's row checkboxes. */
+.task-check {
+  flex: none;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  padding: 0;
+  border: 1.5px solid var(--fg-muted);
+  border-radius: 50%;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+}
+
+.task-check:hover {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.task-check:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.task-check[aria-checked='true'] {
+  border-color: var(--success);
+  background: var(--success);
+  color: #ffffff;
+}
+
+.task-done .doc-name {
+  text-decoration: line-through;
+  color: var(--fg-muted);
+}
+
+/* The hover hint on "Listed tasks" in a chat answer. */
+.msg-tool-info {
+  display: inline-flex;
+  margin-left: 4px;
+  color: var(--fg-muted);
+  cursor: help;
 }

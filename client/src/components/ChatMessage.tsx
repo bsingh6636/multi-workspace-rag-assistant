@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertIcon, CheckIcon, ChevronRightIcon, CopyIcon, FileIcon, SyncIcon, XIcon } from '@primer/octicons-react'
+import { AlertIcon, CheckIcon, ChevronRightIcon, CopyIcon, FileIcon, InfoIcon, SyncIcon, XIcon } from '@primer/octicons-react'
 import { toast } from 'sonner'
 import type { Citation, Message, ToolCallSummary } from '../types'
 
@@ -147,12 +147,20 @@ function ToolCalls({ calls = [] }: { calls?: ToolCallSummary[] }) {
             {ok ? <CheckIcon size={12} /> : <XIcon size={12} />}
             <span>{describeToolCall(c)}</span>
             {reason && <span className="msg-tool-reason">{` · ${reason}`}</span>}
+            {/* The listed tasks are text the model wrote, so they can't be ticked here. */}
+            {ok && c.tool_name === 'list_tasks' && (
+              <span className="msg-tool-info" title={TASKS_TAB_HINT} aria-label={TASKS_TAB_HINT} role="img">
+                <InfoIcon size={12} />
+              </span>
+            )}
           </li>
         )
       })}
     </ul>
   )
 }
+
+const TASKS_TAB_HINT = 'To mark tasks done or delete them, use the Tasks tab.'
 
 function describeToolCall(c: ToolCallSummary): string {
   const args = (c.args ?? {}) as Record<string, unknown>
@@ -165,6 +173,8 @@ function describeToolCall(c: ToolCallSummary): string {
     }
     case 'list_tasks':
       return ok ? 'Listed tasks' : "Couldn't list tasks"
+    case 'complete_task':
+      return ok ? 'Marked a task done' : "Couldn't mark the task done"
     case 'send_discord_summary':
       return ok ? 'Posted to Discord' : "Couldn't post to Discord"
     default:

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   createWorkspace,
   deleteWorkspace,
+  getWorkspaceCounts,
   listWorkspaces,
   renameWorkspace,
 } from '../controllers/workspace.controller';
@@ -23,6 +24,7 @@ router.use('/:wsId', loadWorkspace);
 
 router.patch('/:wsId', renameWorkspace);
 router.delete('/:wsId', deleteWorkspace);
+router.get('/:wsId/counts', getWorkspaceCounts);
 
 router.use('/:wsId/documents', documentRoutes);
 router.use('/:wsId/chats', chatRoutes);

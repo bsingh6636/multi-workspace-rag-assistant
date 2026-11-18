@@ -85,3 +85,21 @@ export async function deleteWorkspace(req: Request, res: Response) {
 
   res.status(204).end();
 }
+
+// GET /api/workspaces/:wsId/counts: the numbers on the dashboard tabs. Each is
+// the same as that tab's own list total: all documents, open tasks (the Tasks
+// tab's default view) and all tool calls. head: true sends only the count.
+export async function getWorkspaceCounts(req: Request, res: Response) {
+  const wsId = req.workspace!.id;
+  const count = (table: 'documents' | 'tasks' | 'tool_calls') =>
+    supabase.from(table).select('id', { count: 'exact', head: true }).eq('workspace_id', wsId);
+
+  const [documents, openTasks, toolCalls] = await Promise.all([
+    count('documents'),
+    count('tasks').is('done_at', null),
+    count('tool_calls'),
+  ]);
+  for (const result of [documents, openTasks, toolCalls]) if (result.error) throw result.error;
+
+  res.json({ documents: documents.count ?? 0, openTasks: openTasks.count ?? 0, toolCalls: toolCalls.count ?? 0 });
+}

@@ -208,7 +208,8 @@ Built in Part 4 (`services/tools.ts`, `services/toolLoop.ts`, `services/chat.ts`
 ```ts
 // tools.ts: the allowlist. A Map, so "toString" or "__proto__" can't match anything inherited.
 save_task            z.strictObject({ title: string 1–200 (trimmed), due_date?: z.iso.date() })
-list_tasks           z.strictObject({ limit?: int 1–50 })            // read-only, default 10
+list_tasks           z.strictObject({ limit?: int 1–50, include_done?: boolean })  // read-only, default 10, open tasks only
+complete_task        z.strictObject({ task_id: uuid })               // sets done_at; scoped by the server's workspace_id
 send_discord_summary z.strictObject({ summary: string 1–1800 })
 
 // toolLoop.ts (pure: generate and execute are passed in, so it's unit-tested with fakes)
@@ -224,6 +225,10 @@ zod safeParse fails     → invalid_args, { error: prettified zod issues }
 run() throws ToolError  → error, { error: its message }      (other errors: generic message)
 otherwise               → success, { result }
 ```
+
+**Task actions** (`docs/plans/task-actions.md`): tasks have `done_at` (null = open). The model can mark a task done (`list_tasks` returns `task_id`s, then `complete_task`). That's easy to undo, so it's allowed. **There is deliberately no delete tool.** Deleting can't be undone, and retrieved document text is untrusted, so "delete all tasks" in a document must never be able to cause it. Deleting, and ticking a task done or open again, happen in the Tasks tab (`PATCH`/`DELETE …/tasks/:taskId`, scoped by the URL's workspace).
+
+**Tab counts** (`docs/plans/tab-counts.md`): the Documents, Tasks and Tool calls tabs show GitHub-style counters: all documents, **open** tasks and all tool calls, the same numbers as each tab's own header. They come from `GET /api/workspaces/:wsId/counts`, which runs three head-only count queries scoped by the URL's workspace. The Dashboard refetches them when the workspace or tab changes, and after a panel changes something (a chat answer, an upload or delete, done/not done, Refresh). A 0 is hidden, as on GitHub, and Chat has no counter.
 
 - **Scope:** `ctx = { workspaceId, chatId, messageId }` comes from the server. No schema has a `workspace_id` field, and the schemas are strict, so a `workspace_id` the model invents is an `invalid_args` error in the log, never used.
 - **One source for schemas:** `z.toJSONSchema(schema)` becomes the Gemini declaration (`parametersJsonSchema`), so validation and what the model sees can't drift apart.
@@ -243,7 +248,7 @@ otherwise               → success, { result }
   - `allowed_mentions: { parse: [] }` stops an `@everyone` in a summary (perhaps from an uploaded document) from pinging anyone.
   - There's a 10 s timeout.
   - Not configured → `error` "Discord isn't set up on this server", and the model tells the user.
-- **Safety filter:** every Gemini call sets `safetySettings`: harassment, hate and sexually explicit content are blocked at LOW and above, dangerous content at MEDIUM and above. Newer models block nothing by default, and a dictated post goes to a shared channel. A blocked request or reply becomes a `done` answer "I can't help with that." It isn't `failed`, because Retry would be blocked again. That turn is left out of later history so it doesn't block the rest of the chat. The prompt also says never to post insults, sexual content or claims about a person.
+- **Safety filter:** every Gemini call sets `safetySettings`: hate and sexually explicit content are blocked at LOW and above, harassment and dangerous content at MEDIUM and above. (Harassment was LOW until Part 6: the seeded injection document is rated harassment LOW, which blocked most answers in its workspace. The abusive test posts were blocked the same either way.) Newer models block nothing by default, and a dictated post goes to a shared channel. A blocked request or reply becomes a `done` answer "I can't help with that." If a tool already succeeded in that turn (e.g. `list_tasks` returned a title the filter dislikes), the answer says what was done instead, like "Your tasks were loaded, but the content filter blocked my reply. You can see the result in the Tasks or Tool calls tab." (`blockedReply` in `prompt.ts`). It isn't `failed`, because Retry would be blocked again. That turn is left out of later history so it doesn't block the rest of the chat. The prompt also says never to post insults, sexual content or claims about a person.
 - **Logging is best-effort:** if writing the `tool_calls` row fails, it's printed and the turn continues. The side effect already happened, and failing the answer would invite a Retry that repeats it.
 - **Shown in the chat:** the messages API embeds each answer's tool calls (`tool_name, status, error, args`) through `tool_calls.message_id`. The client shows one small line per call under the answer ("✓ Saved task “…” (due …)" or "✕ Couldn't post to Discord · Discord isn't set up on this server"), also under a failed answer, because a tool may have run before it failed.
 - **Tool results aren't stored in `messages`.** `tool_calls` holds them. History for later turns is the user/assistant text, and the assistant's confirmation carries what was done.

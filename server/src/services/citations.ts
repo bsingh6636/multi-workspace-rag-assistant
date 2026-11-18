@@ -33,6 +33,8 @@ const SMALL_TALK = [
   /^(who|what)are(you|u)$/,
   // what can you do / what does this chat do
   new RegExp(`^what(can|does|do)${ASSISTANT}do(forme)?$`),
+  // what do you have / what do u ha (sent cut off) / what does this chat offer
+  new RegExp(`^what(do|does)${ASSISTANT}(have|hav|ha|got|offer)$`),
   // how can you help (me)
   /^how(can|could|do)(you|u)help(me)?$/,
   // what abilities do you have / which tools can the model use
