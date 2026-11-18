@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { CommentDiscussionIcon, FileIcon } from '@primer/octicons-react'
+import { ChecklistIcon, CommentDiscussionIcon, FileIcon, ToolsIcon } from '@primer/octicons-react'
 import { toast } from 'sonner'
 import { deleteRequest, errorMessage, getRequest, patchRequest, postRequest } from '../lib/http'
 import { nextDefaultName } from '../lib/workspaceNames'
@@ -8,6 +8,8 @@ import type { Profile, Workspace } from '../types'
 import ChatPanel from './ChatPanel'
 import DeleteWorkspaceDialog from './DeleteWorkspaceDialog'
 import DocumentsPanel from './DocumentsPanel'
+import TasksPanel from './TasksPanel'
+import ToolCallsPanel from './ToolCallsPanel'
 import UserMenu from './UserMenu'
 import WorkspaceMenu from './WorkspaceMenu'
 import WorkspaceNameDialog from './WorkspaceNameDialog'
@@ -16,16 +18,18 @@ import WorkspaceSwitcher from './WorkspaceSwitcher'
 // Which dialog is open (only one at a time).
 type DialogKind = 'create' | 'rename' | 'delete' | null
 
-// The workspace sections. Part 5 adds Tasks and the tool-call log.
-type Tab = 'chat' | 'documents'
+// The workspace sections. The active tab stays the same when the workspace changes.
+type Tab = 'chat' | 'documents' | 'tasks' | 'tool-calls'
 const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
   { id: 'chat', label: 'Chat', icon: <CommentDiscussionIcon /> },
   { id: 'documents', label: 'Documents', icon: <FileIcon /> },
+  { id: 'tasks', label: 'Tasks', icon: <ChecklistIcon /> },
+  { id: 'tool-calls', label: 'Tool calls', icon: <ToolsIcon /> },
 ]
 
 // Logged-in shell: loads the user's workspaces, restores the last active one,
-// and handles switching, create, rename and delete. Panels for documents, chats,
-// tasks and the tool-call log are added in later parts.
+// and handles switching, create, rename and delete. Below the header, one tab
+// per section of the active workspace: chat, documents, tasks, tool-call log.
 export default function Dashboard({ user }: { user: User }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -167,6 +171,8 @@ export default function Dashboard({ user }: { user: User }) {
             {/* key: a new workspace gets a fresh panel, so the old workspace's data never flashes. */}
             {tab === 'chat' && <ChatPanel key={active.id} workspaceId={active.id} />}
             {tab === 'documents' && <DocumentsPanel key={active.id} workspaceId={active.id} />}
+            {tab === 'tasks' && <TasksPanel key={active.id} workspaceId={active.id} />}
+            {tab === 'tool-calls' && <ToolCallsPanel key={active.id} workspaceId={active.id} />}
           </>
         )}
       </main>

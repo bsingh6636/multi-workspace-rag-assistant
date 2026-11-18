@@ -985,6 +985,8 @@ button {
   gap: 8px;
   margin: 0 0 16px;
   border-bottom: 1px solid var(--border-muted);
+  overflow-x: auto; /* four tabs don't fit a phone: the bar scrolls, not the page */
+  scrollbar-width: none;
 }
 
 .tab {
@@ -999,6 +1001,8 @@ button {
   border: 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
 }
 
@@ -1470,4 +1474,118 @@ button {
 
 .msg-tool-reason {
   white-space: pre-wrap; /* keep the space before "·" */
+}
+
+/* ---------- Tasks and Tool calls tabs ---------- */
+
+.box-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.box-footer {
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 12px;
+  border-top: 1px solid var(--border-muted);
+}
+
+.tool-row {
+  align-items: flex-start;
+}
+
+.tool-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.tool-icon-success {
+  color: var(--success);
+}
+
+.tool-icon-failed {
+  color: var(--danger);
+}
+
+.tool-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* The arguments on one line; the full JSON is in Details. */
+.tool-args {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-error {
+  white-space: pre-wrap; /* zod messages are several lines */
+  overflow-wrap: anywhere;
+}
+
+.tool-details {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.tool-details summary {
+  width: fit-content;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.tool-details h4 {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tool-details pre {
+  max-height: 240px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  font-size: 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+}
+
+.tool-when {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .box-header {
+    flex-wrap: wrap;
+  }
+}
+
+/* Four tabs with icons don't fit a phone; the labels alone do. */
+@media (max-width: 480px) {
+  .tab svg {
+    display: none;
+  }
 }

@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { deleteRequest, errorMessage, getRequest, postRequest } from '../lib/http'
 import type { DocumentRow, DocumentStatus, UploadResult } from '../types'
 import DeleteDocumentDialog from './DeleteDocumentDialog'
+import RowsSkeleton from './ui/RowsSkeleton'
 
 // Same limits as the server (server/src/middleware/upload.ts). Checked here only
 // to give instant feedback; the server enforces them anyway.
@@ -116,7 +117,7 @@ export default function DocumentsPanel({ workspaceId }: { workspaceId: string })
         />
       </header>
 
-      {loading && <DocumentsSkeleton />}
+      {loading && <RowsSkeleton label="Loading documents" />}
 
       {loadError && (
         <p className="flash flash-error box-flash" role="alert">
@@ -205,25 +206,4 @@ function plural(n: number, word: string) {
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
-// Placeholder rows shaped like document rows (icon, name, meta, status), so the
-// panel keeps its height when the real list arrives.
-const SKELETON_NAME_WIDTHS = ['45%', '60%', '35%']
-
-function DocumentsSkeleton() {
-  return (
-    <ul className="box-list" aria-busy="true" aria-label="Loading documents">
-      {SKELETON_NAME_WIDTHS.map((width, i) => (
-        <li key={i} className="box-row" aria-hidden="true">
-          <div className="skeleton doc-skeleton-icon" />
-          <div className="doc-main doc-skeleton-text">
-            <div className="skeleton doc-skeleton-name" style={{ width }} />
-            <div className="skeleton doc-skeleton-meta" />
-          </div>
-          <div className="skeleton doc-skeleton-status" />
-        </li>
-      ))}
-    </ul>
-  )
 }
