@@ -1,6 +1,7 @@
 import type { User } from '@supabase/supabase-js'
 import { SignOutIcon } from '@primer/octicons-react'
-import { supabase } from '../lib/supabase'
+import { signOut } from '../lib/auth'
+import { navigate } from '../lib/route'
 import Popover from './ui/Popover'
 
 // Avatar button in the top-right. Opens a menu with an account card (picture,
@@ -10,6 +11,14 @@ export default function UserMenu({ user }: { user: User }) {
   // Google sign-in fills these; email/password accounts have neither.
   const name: string | undefined = user.user_metadata?.full_name ?? user.user_metadata?.name
   const avatarUrl: string | undefined = user.user_metadata?.avatar_url
+
+  // Sign out, then go back to "/", so whoever signs in next opens their own last
+  // workspace, not this user's link. (A sign-out from an expired session keeps
+  // the URL, so signing in again returns to the same workspace and tab.)
+  async function handleSignOut() {
+    await signOut()
+    navigate('/', { replace: true })
+  }
 
   return (
     <Popover
@@ -28,7 +37,7 @@ export default function UserMenu({ user }: { user: User }) {
             </div>
           </div>
           <div className="menu-divider" role="separator" />
-          <button type="button" role="menuitem" className="menu-item" onClick={() => supabase.auth.signOut()}>
+          <button type="button" role="menuitem" className="menu-item" onClick={handleSignOut}>
             <span className="menu-check">
               <SignOutIcon />
             </span>

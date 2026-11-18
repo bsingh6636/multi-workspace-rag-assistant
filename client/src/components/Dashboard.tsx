@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js'
 import { ChecklistIcon, CommentDiscussionIcon, FileIcon, ToolsIcon } from '@primer/octicons-react'
 import { toast } from 'sonner'
 import { deleteRequest, errorMessage, getRequest, patchRequest, postRequest } from '../lib/http'
+import { navigate, parseRoute, routePath, type Tab } from '../lib/route'
 import { nextDefaultName } from '../lib/workspaceNames'
 import type { Profile, Workspace, WorkspaceCounts } from '../types'
 import ChatPanel from './ChatPanel'
@@ -18,8 +19,7 @@ import WorkspaceSwitcher from './WorkspaceSwitcher'
 // Which dialog is open (only one at a time).
 type DialogKind = 'create' | 'rename' | 'delete' | null
 
-// The workspace sections. The active tab stays the same when the workspace changes.
-type Tab = 'chat' | 'documents' | 'tasks' | 'tool-calls'
+// The workspace sections (ids in lib/route.ts). The active tab stays the same when the workspace changes.
 // count: which number from /counts the tab shows (Chat has none, like GitHub's Code tab).
 const TABS: { id: Tab; label: string; icon: ReactNode; count?: keyof WorkspaceCounts }[] = [
   { id: 'chat', label: 'Chat', icon: <CommentDiscussionIcon /> },
@@ -28,9 +28,11 @@ const TABS: { id: Tab; label: string; icon: ReactNode; count?: keyof WorkspaceCo
   { id: 'tool-calls', label: 'Tool calls', icon: <ToolsIcon />, count: 'toolCalls' },
 ]
 
-// Logged-in shell: loads the user's workspaces, restores the last active one,
-// and handles switching, create, rename and delete. Below the header, one tab
-// per section of the active workspace: chat, documents, tasks, tool-call log.
+// Logged-in shell: loads the user's workspaces, opens the one in the URL (or
+// the last active one), and handles switching, create, rename and delete.
+// Below the header, one tab per section of the active workspace: chat,
+// documents, tasks, tool-call log. The workspace and tab are kept in the URL
+// (lib/route.ts), so a reload, Back/Forward and links work.
 export default function Dashboard({ user }: { user: User }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -43,22 +45,41 @@ export default function Dashboard({ user }: { user: User }) {
   const [loadAttempt, setLoadAttempt] = useState(0)
 
   useEffect(() => {
+    // Set by the cleanup: results that arrive after it (React StrictMode's
+    // second run in dev, a retry, or sign-out mid-load) are dropped.
+    let ignore = false
     async function load() {
       try {
         // /profile first: it creates the profile and "Default" workspace for new users.
         const profile = await getRequest<Profile>('/profile')
         const list = await getRequest<Workspace[]>('/workspaces')
+        if (ignore) return
         setWorkspaces(list)
-        // Restore the last workspace if it still exists, otherwise use the first.
+        // 1. The workspace in the URL, if it's one of the user's.
+        // 2. Otherwise the last workspace if it still exists, otherwise the first.
+        const route = parseRoute(window.location.pathname)
+        const fromUrl = list.find((ws) => ws.id === route.wsId)
+        if (route.wsId && !fromUrl) toast.error('Workspace not found. Opened your last workspace instead.', { id: 'ws-not-found' })
         const last = list.find((ws) => ws.id === profile.last_workspace_id)
-        setActiveId(last?.id ?? list[0]?.id ?? null)
+        const chosen = fromUrl ?? last ?? list[0]
+        if (!chosen) return
+        const chosenTab = fromUrl ? route.tab : 'chat'
+        setActiveId(chosen.id)
+        setTab(chosenTab)
+        // "/" or a bad link becomes the real URL, without adding a history entry.
+        navigate(routePath(chosen.id, chosenTab), { replace: true })
+        // Opening a workspace by its link counts as using it.
+        if (chosen.id !== profile.last_workspace_id) rememberWorkspace(chosen.id)
       } catch (e) {
-        setLoadError(errorMessage(e))
+        if (!ignore) setLoadError(errorMessage(e))
       } finally {
-        setLoading(false)
+        if (!ignore) setLoading(false)
       }
     }
     load()
+    return () => {
+      ignore = true
+    }
   }, [loadAttempt])
 
   function retryLoad() {
@@ -90,15 +111,37 @@ export default function Dashboard({ user }: { user: User }) {
 
   const allNames = workspaces.map((ws) => ws.name)
 
-  // Switch right away in the UI, then remember it on the server.
-  async function switchTo(id: string) {
+  // Show a workspace and tab, and put them in the URL.
+  function show(id: string, nextTab: Tab, options?: { replace?: boolean }) {
     setActiveId(id)
-    try {
-      await patchRequest('/profile', { last_workspace_id: id })
-    } catch (e) {
-      toast.error(`Couldn't save your workspace choice: ${errorMessage(e)}`)
-    }
+    setTab(nextTab)
+    navigate(routePath(id, nextTab), options)
   }
+
+  // Switch right away in the UI (same tab), then remember it on the server.
+  async function switchTo(id: string, options?: { replace?: boolean }) {
+    show(id, tab, options)
+    await rememberWorkspace(id)
+  }
+
+  // Back/Forward: show what the URL says, without adding another history entry.
+  // A URL whose workspace is gone (deleted since) is swapped for the current one.
+  useEffect(() => {
+    function onPopState() {
+      const route = parseRoute(window.location.pathname)
+      const ws = workspaces.find((w) => w.id === route.wsId)
+      if (!ws) {
+        if (route.wsId) toast.error('That workspace no longer exists.', { id: 'ws-not-found' })
+        if (activeId) navigate(routePath(activeId, tab), { replace: true })
+        return
+      }
+      setActiveId(ws.id)
+      setTab(route.tab)
+      if (ws.id !== activeId) rememberWorkspace(ws.id)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [workspaces, activeId, tab])
 
   // The three dialog actions throw on failure, so the dialog can show the error.
   async function createWorkspace(name: string) {
@@ -124,7 +167,8 @@ export default function Dashboard({ user }: { user: User }) {
     setWorkspaces(remaining)
     setDialog(null)
     toast.success(`Deleted workspace “${active.name}”`)
-    if (remaining[0]) await switchTo(remaining[0].id)
+    // replace: Back shouldn't return to the deleted workspace's URL.
+    if (remaining[0]) await switchTo(remaining[0].id, { replace: true })
   }
 
   return (
@@ -181,7 +225,7 @@ export default function Dashboard({ user }: { user: User }) {
                   type="button"
                   className="tab"
                   aria-current={tab === t.id ? 'page' : undefined}
-                  onClick={() => setTab(t.id)}
+                  onClick={() => show(active.id, t.id)}
                 >
                   {t.icon}
                   {t.label}
@@ -217,7 +261,7 @@ export default function Dashboard({ user }: { user: User }) {
         <WorkspaceNameDialog
           title="Rename workspace"
           submitLabel="Rename"
-          initialName={active.name}
+          currentName={active.name}
           takenNames={workspaces.filter((ws) => ws.id !== active.id).map((ws) => ws.name)}
           onSubmit={renameWorkspace}
           onClose={() => setDialog(null)}
@@ -228,6 +272,15 @@ export default function Dashboard({ user }: { user: User }) {
       )}
     </div>
   )
+}
+
+// Saves the workspace as the one to open next time ("/" or a new login).
+async function rememberWorkspace(id: string) {
+  try {
+    await patchRequest('/profile', { last_workspace_id: id })
+  } catch (e) {
+    toast.error(`Couldn't save your workspace choice: ${errorMessage(e)}`)
+  }
 }
 
 // Like GitHub's counters: 999, then 1k, 1.2k, 12k.

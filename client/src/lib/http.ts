@@ -1,4 +1,6 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios'
+import { toast } from 'sonner'
+import { signOut } from './auth'
 import { supabase } from './supabase'
 
 // An error from our API. `message` is always safe to show to the user;
@@ -57,9 +59,12 @@ http.interceptors.response.use(
     }
 
     // The session is gone (expired or revoked): sign out so the login screen shows.
+    // Signing out clears all toasts (App.tsx), so the reason is shown after it.
+    // The fixed id keeps it to one toast when several requests fail together.
     if (status === 401) {
-      supabase.auth.signOut()
-      return Promise.reject(new ApiError('Your session has expired. Please sign in again.', status))
+      const message = 'Your session has expired. Please sign in again.'
+      signOut().then(() => toast.error(message, { id: 'session-expired' }))
+      return Promise.reject(new ApiError(message, status))
     }
 
     const message = error.response?.data?.error ?? `Request failed (${status})`

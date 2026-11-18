@@ -6,7 +6,10 @@ import Modal from './ui/Modal'
 type Props = {
   title: string
   submitLabel: string
+  /** Create: the suggested name the input starts with (it can be submitted as is). */
   initialName?: string
+  /** Rename: the workspace's current name. The input starts with it, and submitting it unchanged is blocked. */
+  currentName?: string
   /** Names of the user's other workspaces; typing one of them shows an error. */
   takenNames: string[]
   /** Should throw on failure; the error message is shown inside the dialog. */
@@ -20,18 +23,20 @@ type Props = {
 export default function WorkspaceNameDialog({
   title,
   submitLabel,
-  initialName = '',
+  initialName,
+  currentName,
   takenNames,
   onSubmit,
   onClose,
 }: Props) {
-  const [name, setName] = useState(initialName)
+  const [name, setName] = useState(currentName ?? initialName ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const trimmed = name.trim()
   // Renaming to the same name is a no-op; a case-only change ("research" → "Research") is allowed.
-  const unchanged = trimmed === initialName.trim()
+  // Create has no current name, so its suggested name can be submitted as is.
+  const unchanged = currentName !== undefined && trimmed === currentName.trim()
   const duplicate = takenNames.some((taken) => sameName(taken, trimmed))
 
   async function handleSubmit(e: FormEvent) {
