@@ -1,9 +1,10 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { DOCUMENT_COLUMNS, supabase } from '../db';
+import { DOCUMENT_COLUMNS, supabase, type DocumentRow } from '../db';
 import { HttpError } from '../lib/httpError';
 import { olderThan, parsePage, toPage } from '../lib/pagination';
 import { ingestDocument } from '../services/ingest';
+import { failAbandonedUploads } from '../services/recovery';
 
 // All handlers run after loadWorkspace, so req.workspace is the caller's own
 // workspace. Every query is scoped by req.workspace.id.
@@ -25,7 +26,9 @@ export async function listDocuments(req: Request, res: Response) {
   const { data, count, error } = await query;
   if (error) throw error;
 
-  res.json(toPage(data, page.limit, count));
+  // A document still 'processing' that nobody is working on shows as failed.
+  const rows = await failAbandonedUploads(data as DocumentRow[]);
+  res.json(toPage(rows, page.limit, count));
 }
 
 // POST /api/workspaces/:wsId/documents  (multipart, field "file")

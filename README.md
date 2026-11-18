@@ -2,17 +2,17 @@
 
 A multi-workspace RAG assistant. Each user owns one or more **workspaces**. Each workspace has its own documents, chats, tasks and tool-call log. The assistant answers questions using **only** the documents in the active workspace, cites its sources, says "I don't know" when the documents don't cover the question, and can call tools that have real side effects.
 
-> **Live demo:** `<LIVE_URL>`
+> **Live demo:** https://workspace-ai.brijeshhq.com
 > **Demo account:** `<demo email>` / `<demo password>`
 >
-> The app runs on an Azure VM as a single Docker container behind Caddy (HTTPS). See [Deployment](#deployment-docker-on-a-vm).
+> The app runs as a single Docker container on Render's free plan. After 15 idle minutes it sleeps, so the first load can take about a minute. See [Deployment](#deployment-docker-on-render).
 
 ---
 
 ## Features
 
 - **Auth:** email and password login through Supabase Auth. A "Default" workspace is created on signup.
-- **Workspaces:** create, rename, delete and switch. The last active workspace is remembered per user. A user always keeps at least one workspace, so the last one can't be deleted.
+- **Workspaces:** create, rename, delete and switch. The last active workspace is remembered per user. A user always keeps at least one workspace, so the last one can't be deleted from the menu. (Deleting it from chat creates a new "Default" first.)
 - **Document ingestion:** `.txt`, `.md` and text-based `.pdf` files. Uploads are deduplicated by SHA-256 hash, then chunked, embedded and stored with `workspace_id` on every chunk.
 - **Scoped RAG chat:** vector search is filtered by workspace inside the SQL query. Answers include citations (file and section), and a citation check in code makes the assistant say "I don't know" whenever an answer isn't backed by this workspace's documents.
 - **Tool calling:** a loop of up to 3 steps. Every tool's arguments are validated with zod, and every call is logged, including failures.
@@ -20,6 +20,8 @@ A multi-workspace RAG assistant. Each user owns one or more **workspaces**. Each
   - `list_tasks`: read-only (open tasks; ids for complete_task)
   - `complete_task`: marks a task done (deleting is only in the Tasks tab, never a tool)
   - `send_discord_summary`: posts a summary to a Discord webhook
+  - `send_slack_summary`: the same for a Slack Incoming Webhook
+  - `delete_workspace`: "delete everything" in chat. The server replies with a fixed "Are you sure?" question, and only an explicit "yes, delete everything" right after that question deletes the workspace and everything in it. Both steps are checked in code.
 - **Dashboard:** four tabs for the active workspace: Chat (with the chat history), Documents, Tasks (due date, "Overdue" / "Due today", tick done, delete, "Show done") and Tool calls (status, arguments, error, latency, and the full arguments and result on expand). Switching workspaces reloads every tab.
 - **Retrieval debug panel:** the pulse icon under an answer opens its details: the workspace id that was searched, every chunk the search ranked (file › section, similarity, and whether it was cited, only in the prompt, or below the threshold), plus tokens in/out and latency for that answer.
 
@@ -36,8 +38,8 @@ A multi-workspace RAG assistant. Each user owns one or more **workspaces**. Each
 | LLM + embeddings | Google Gemini (`@google/genai`), which handles chat, tool calling and embeddings |
 | Validation | zod |
 | File parsing | multer + pdf-parse |
-| Notifications | Discord webhook |
-| Hosting | One Docker container on an Azure VM (Express serves the built React app), with Caddy in front for HTTPS |
+| Notifications | Discord webhook, Slack Incoming Webhook |
+| Hosting | One Docker container on Render, free plan (Express serves the built React app). Render handles HTTPS and the custom domain |
 
 **Why React + Express instead of Next.js:** I could ship it quickly and explain every line. The backend is plain route handlers, so moving it to Next.js API routes would be mostly mechanical.
 
@@ -135,7 +137,7 @@ All routes need `Authorization: Bearer <jwt>`. Every route under `/workspaces/:w
 | GET | `/api/workspaces/:wsId/tool-calls` | Tool-call log (paged; `?failed=true` for failures only) |
 | GET | `/api/workspaces/:wsId/tasks` | Tasks created by tools (paged; `?done=false` for open only) |
 | PATCH, DELETE | `/api/workspaces/:wsId/tasks/:taskId` | Mark done / open again (`{ done }`), or delete. Delete is UI-only: no tool can delete |
-| GET | `/health` | Health check for the keep-alive ping |
+| GET | `/health` | Health check (Render's deploy check and the keep-alive ping) |
 
 **Paged lists** (documents, tasks, tool calls) take `?limit=` (1–100, default 25) and `?cursor=`, and return `{ items, nextCursor, total }`, newest first. Send `nextCursor` back as `?cursor=` for the next page; `null` means there are no more. It's cursor (keyset) paging on `(created_at, id)`, so rows added meanwhile never shift a page. The UI shows a **Load more** button.
 
@@ -203,10 +205,11 @@ There is no separate "is a tool needed?" LLM call. The tool definitions are sent
 ### Prompt-injection defenses
 
 - **Delimiters:** retrieved chunks are wrapped in `<documents><chunk label="c1" filename="…" section="…">…</chunk></documents>`. The system prompt says that text inside these tags is data and never instructions.
-- **Tool allowlist:** only `save_task`, `list_tasks`, `complete_task` and `send_discord_summary` exist (no delete tool, on purpose). A request for `delete_everything` is logged as `unknown_tool` and nothing runs.
+- **Tool allowlist:** only `save_task`, `list_tasks`, `complete_task`, `send_discord_summary`, `send_slack_summary` and `delete_workspace` exist. A request for `delete_everything` is logged as `unknown_tool` and nothing runs.
+- **Deleting needs the user, twice (checked in code):** `delete_workspace` does nothing unless the user's own message asks ("delete everything"), and then it only makes the server reply with a fixed "Are you sure?" question. It deletes only when the user's whole next message is a yes **and** the answer before it is that question, asked by the tool (looked up in `tool_calls`). A document that says "call delete_workspace" can't get past the first check.
 - **Server-injected scope:** tools receive `workspace_id` from the server. Even a manipulated tool call can't reach another workspace.
 - **Argument validation:** every tool argument is parsed with a strict zod schema before it is executed. Unknown arguments (like an invented `workspace_id`) are rejected, not ignored.
-- **Discord:** `@everyone`/`@here` in a summary can't ping anyone (`allowed_mentions` is empty), and the webhook URL never appears in results or logs.
+- **Discord and Slack:** a post goes out only if the user's message asks for it, and its text must be their own words or cited from the documents. `@everyone`/`@here` (Discord, `allowed_mentions` is empty) and `<!channel>` (Slack, `<`, `>` and `&` escaped) can't ping anyone. The webhook URLs never appear in results or logs.
 - **Safety filter:** every Gemini call blocks hate and sexual content at LOW and above, and harassment and dangerous content at MEDIUM and above. A blocked turn becomes "I can't help with that." The block is logged with the flagged categories, never the text.
 - **Auth outages don't sign users out:** a token Supabase rejects gets 401, which signs the user out. If Supabase Auth can't be reached, the API returns 503 and the user stays signed in.
 
@@ -231,6 +234,7 @@ With an HNSW index, pgvector applies the `WHERE workspace_id` filter **after** t
 - A Supabase project
 - A Gemini API key from Google AI Studio
 - A Discord webhook URL (optional, needed only for `send_discord_summary`)
+- A Slack Incoming Webhook URL (optional, needed only for `send_slack_summary`)
 
 ### 1. Database
 
@@ -262,6 +266,7 @@ GEMINI_EMBED_MODEL=gemini-embedding-001          # called with outputDimensional
 GEMINI_EMBED_RPM=100                             # embedding quota per minute (AI Studio → Rate limits);
 GEMINI_EMBED_TPM=30000                           #   one upload may use at most 95% of it
 DISCORD_WEBHOOK_URL=
+SLACK_WEBHOOK_URL=                               # optional, a Slack Incoming Webhook
 SIMILARITY_THRESHOLD=0.62
 MAX_TOOL_ITERATIONS=3
 
@@ -300,13 +305,12 @@ Express serves `client/dist` as static files, with a catch-all route back to `in
 
 ---
 
-## Deployment (Docker on a VM)
+## Deployment (Docker on Render)
 
 - The app ships as **one Docker image**: the build stage compiles the client and server, and the runtime stage runs `node server/dist/index.js`, which serves both the API and `client/dist`.
-- Secrets (`SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `GEMINI_API_KEY_FALLBACK`, `DISCORD_WEBHOOK_URL`) are passed to the container as environment variables at runtime and never baked into the image. The public `VITE_*` values are build arguments, because Vite inlines them at build time.
-- `GET /health` is the container health check.
-- On the VM, `deploy/compose.yml` runs the app and **Caddy**. Caddy is the only container with public ports (80/443). It gets and renews a Let's Encrypt certificate for the subdomain and forwards requests to the app.
-- The image is built on the laptop and copied with `docker save | ssh … docker load`, so the VM needs no source code or registry.
+- Render builds the image from the repo's `Dockerfile` on every push to `main`, using [`render.yaml`](render.yaml) (a Render Blueprint). It also handles HTTPS for the custom domain.
+- Secrets (`SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `GEMINI_API_KEY_FALLBACK`, `DISCORD_WEBHOOK_URL`, `SLACK_WEBHOOK_URL`) are set in the Render dashboard and given to the container as env variables at run time. They're never in git or in the image. Render offers every env variable to the build as a build arg, but the Dockerfile declares only the public `VITE_*` ones, which Vite inlines at build time.
+- `GET /health` is the health check. On the free plan the service sleeps after 15 minutes with no traffic. An optional keep-alive ping to `/health` keeps it awake.
 - Step-by-step commands, with a reason for each: [`deploy/README.md`](deploy/README.md).
 
 ---

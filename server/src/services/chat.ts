@@ -15,21 +15,43 @@ import {
 } from './prompt';
 import { retrieve } from './retrieve';
 import { runToolLoop } from './toolLoop';
-import { executeToolCall, toolAbilities, toolDeclarations } from './tools';
+import { inProgress } from './recovery';
+import { executeToolCall, toolAbilities, toolDeclarations, type ToolContext } from './tools';
 
 const HISTORY_LIMIT = 10;
 
 // Produces the answer for one user message and writes it into the (already
 // created, status 'pending') assistant row. Used by both "send" and "retry".
-// It never throws: on any failure the row becomes 'failed' with a short reason,
-// and the user's message (saved earlier) is untouched (hard rule 9).
-export async function answer(input: {
+// On any failure the row becomes 'failed' with a short reason, and the user's
+// message (saved earlier) is untouched (hard rule 9). It only throws if even
+// that write fails; then the row is still 'pending', and the next message list
+// marks it failed because it's no longer in progress (recovery.ts).
+export async function answer(input: AnswerInput): Promise<AnswerResult> {
+  inProgress.answers.add(input.assistantMessageId);
+  try {
+    return await answerUntracked(input);
+  } finally {
+    inProgress.answers.delete(input.assistantMessageId);
+  }
+}
+
+// workspaceDeleted: the user confirmed delete_workspace in this turn. The
+// workspace, this chat and `message` are gone (message was never saved); the
+// client switches to `next`.
+export type AnswerResult = {
+  message: MessageRow;
+  workspaceDeleted: { deletedName: string; next: { id: string; name: string }; created: boolean } | null;
+};
+
+type AnswerInput = {
   workspaceId: string;
   chatId: string;
   userMessage: MessageRow;
   assistantMessageId: string;
   timeZone?: string; // the browser's IANA time zone, only used for "today"
-}): Promise<MessageRow> {
+};
+
+async function answerUntracked(input: AnswerInput): Promise<AnswerResult> {
   const started = Date.now();
   const question = input.userMessage.content ?? '';
   // Tools that succeeded this turn. If the safety filter then blocks the reply,
@@ -44,12 +66,17 @@ export async function answer(input: {
 
     // The LLM is always called with tools attached (hard rule 7). The context
     // the tools get comes from the server, never from the model.
-    const ctx = {
+    const last = history.at(-1);
+    const ctx: ToolContext = {
       workspaceId: input.workspaceId,
       chatId: input.chatId,
       messageId: input.assistantMessageId,
       userMessage: question,
+      previousAnswer: last?.role === 'assistant' ? last.content : null,
+      previousAnswerId: last?.role === 'assistant' ? (last.id ?? null) : null,
       chunkLabels: chunks.map((c) => c.label),
+      posts: {},
+      deletion: { state: 'none' },
     };
     const abilities = listAbilities(toolAbilities);
     const llm = await runToolLoop({
@@ -59,11 +86,55 @@ export async function answer(input: {
       maxRounds: config.MAX_TOOL_ITERATIONS,
       generate,
       execute: async (call, rejectReason) => {
+        // Calls after a confirmed delete in the same reply would hit a deleted workspace.
+        if (ctx.deletion.state === 'deleted') rejectReason = 'The workspace was deleted';
         const outcome = await executeToolCall(call, ctx, rejectReason);
         if ('result' in outcome) toolsRun.push(call.name ?? '');
         return outcome;
       },
+      stop: () => ctx.deletion.state === 'deleted',
     });
+
+    // Deleted: the chat and this message row went with the workspace, so
+    // there's nothing to update. The reply only travels back in the response.
+    if (ctx.deletion.state === 'deleted') {
+      const { deletedName, next, created } = ctx.deletion;
+      return {
+        message: {
+          id: input.assistantMessageId,
+          chat_id: input.chatId,
+          workspace_id: input.workspaceId,
+          role: 'assistant',
+          content: `Deleted the workspace "${deletedName}" and everything in it.`,
+          citations: [],
+          retrieval: null,
+          status: 'done',
+          error: null,
+          tokens_in: llm.tokensIn,
+          tokens_out: llm.tokensOut,
+          latency_ms: Date.now() - started,
+          created_at: new Date().toISOString(),
+        },
+        workspaceDeleted: { deletedName, next, created },
+      };
+    }
+
+    // Step 1 of delete_workspace: the reply is the server's fixed question,
+    // whatever the model wrote, so the user sees exactly what a yes will do.
+    if (ctx.deletion.state === 'asked') {
+      return saved(
+        await updateMessage(input.assistantMessageId, {
+          status: 'done',
+          content: ctx.deletion.question,
+          citations: [],
+          retrieval,
+          error: null,
+          tokens_in: llm.tokensIn,
+          tokens_out: llm.tokensOut,
+          latency_ms: Date.now() - started,
+        }),
+      );
+    }
 
     // A turn that called a tool was an action, so it doesn't need a citation.
     const guarded = applyCitationGuard({
@@ -76,7 +147,7 @@ export async function answer(input: {
     });
     retrieval.hit = guarded.citations.length > 0;
 
-    return await updateMessage(input.assistantMessageId, {
+    return saved(await updateMessage(input.assistantMessageId, {
       status: 'done',
       content: guarded.text,
       citations: guarded.citations,
@@ -85,7 +156,7 @@ export async function answer(input: {
       tokens_in: llm.tokensIn,
       tokens_out: llm.tokensOut,
       latency_ms: Date.now() - started,
-    });
+    }));
   } catch (err) {
     // Gemini's safety filter blocked the question or the reply. That's an
     // answer, not a failure: Retry would be blocked again.
@@ -93,32 +164,38 @@ export async function answer(input: {
       console.warn(
         `Answer ${input.assistantMessageId} blocked by the safety filter (${[err.reason, ...err.categories].join(', ')})`,
       );
-      return await updateMessage(input.assistantMessageId, {
-        status: 'done',
-        content: blockedReply(toolsRun),
-        citations: [],
-        error: null,
-        latency_ms: Date.now() - started,
-      });
+      return saved(
+        await updateMessage(input.assistantMessageId, {
+          status: 'done',
+          content: blockedReply(toolsRun),
+          citations: [],
+          error: null,
+          latency_ms: Date.now() - started,
+        }),
+      );
     }
     const message = describeAiError(err, 'AI service') || 'Something went wrong while answering. Please try again.';
     console.error(
       `Answer failed for message ${input.assistantMessageId}: ${err instanceof Error ? err.message : String(err)}`,
     );
-    return await updateMessage(input.assistantMessageId, {
-      status: 'failed',
-      error: message,
-      latency_ms: Date.now() - started,
-    });
+    return saved(
+      await updateMessage(input.assistantMessageId, {
+        status: 'failed',
+        error: message,
+        latency_ms: Date.now() - started,
+      }),
+    );
   }
 }
+
+const saved = (message: MessageRow): AnswerResult => ({ message, workspaceDeleted: null });
 
 // The last few finished messages before this question, oldest first.
 // Pending and failed rows are skipped.
 async function loadHistory(chatId: string, before: string): Promise<HistoryMessage[]> {
   const { data, error } = await supabase
     .from('messages')
-    .select('role, content')
+    .select('id, role, content')
     .eq('chat_id', chatId)
     .eq('status', 'done')
     .in('role', ['user', 'assistant'])
@@ -127,9 +204,9 @@ async function loadHistory(chatId: string, before: string): Promise<HistoryMessa
     .limit(HISTORY_LIMIT);
   if (error) throw error;
 
-  const history = (data as { role: 'user' | 'assistant'; content: string | null }[])
+  const history = (data as { id: string; role: 'user' | 'assistant'; content: string | null }[])
     .filter((m) => m.content)
-    .map((m) => ({ role: m.role, content: m.content! }))
+    .map((m) => ({ id: m.id, role: m.role, content: m.content! }))
     .reverse();
   return dropBlockedTurns(history);
 }

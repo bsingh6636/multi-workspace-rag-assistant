@@ -1,6 +1,8 @@
 # One image: Express serves the API and the built React app.
 # Secrets are NOT baked in. Pass them at run time: docker run --env-file .env ...
 # Only the public Supabase URL and anon key are build args, because Vite inlines them.
+# Render passes every env variable to the build as a build arg, but only ARGs declared
+# below are used, so the secrets never reach the build.
 
 # ---------- build: compile client and server ----------
 FROM node:22-slim AS build

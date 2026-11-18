@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { MESSAGE_COLUMNS, orderToolCalls, supabase, type Chat, type MessageRow } from '../db';
 import { HttpError } from '../lib/httpError';
 import { answer } from '../services/chat';
+import { failAbandonedAnswers } from '../services/recovery';
 
 // Handlers run after loadWorkspace (and loadChat for /:chatId routes), so
 // req.workspace and req.chat are already checked to belong to the caller.
@@ -57,7 +58,8 @@ export async function listMessages(req: Request, res: Response) {
     .order(...orderToolCalls);
   if (error) throw error;
 
-  res.json(data);
+  // An answer still 'pending' that nobody is working on shows as failed (with Retry).
+  res.json(await failAbandonedAnswers(data as MessageRow[]));
 }
 
 // timeZone: the browser's IANA zone ("Asia/Kolkata"), used only to tell the
@@ -97,14 +99,15 @@ export async function sendMessage(req: Request, res: Response) {
     status: 'pending',
   });
 
-  const assistantMessage = await answer({
+  const { message: assistantMessage, workspaceDeleted } = await answer({
     workspaceId,
     chatId: chat.id,
     userMessage,
     assistantMessageId: pending.id,
     timeZone,
   });
-  res.status(201).json({ userMessage, assistantMessage });
+  // workspaceDeleted: the user confirmed delete_workspace; the client switches workspace.
+  res.status(201).json({ userMessage, assistantMessage, workspaceDeleted });
 }
 
 // POST /api/workspaces/:wsId/chats/:chatId/messages/:messageId/retry
@@ -148,14 +151,14 @@ export async function retryMessage(req: Request, res: Response) {
   if (claimError) throw claimError;
   if (claimed.length === 0) throw new HttpError(409, 'This answer is already being retried');
 
-  const assistantMessage = await answer({
+  const { message: assistantMessage, workspaceDeleted } = await answer({
     workspaceId: req.workspace!.id,
     chatId: chat.id,
     userMessage,
     assistantMessageId: failed.id,
     timeZone,
   });
-  res.json({ assistantMessage });
+  res.json({ assistantMessage, workspaceDeleted });
 }
 
 async function insertMessage(fields: Partial<MessageRow>): Promise<MessageRow> {

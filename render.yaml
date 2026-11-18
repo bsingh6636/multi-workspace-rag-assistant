@@ -1,0 +1,41 @@
+# Render Blueprint: one web service built from ./Dockerfile.
+# Render → New → Blueprint → pick this repo. It asks for each `sync: false` value once.
+# Secrets are typed into the Render dashboard and never committed here.
+services:
+  - type: web
+    name: multi-workspace-rag-assistant
+    runtime: docker            # builds ./Dockerfile; Render sets PORT and the app reads it
+    plan: free                 # sleeps after 15 min without traffic, ~1 min to wake up
+    region: singapore          # pick the region closest to the Supabase project
+    branch: main
+    autoDeploy: true           # every push to main rebuilds and redeploys
+    healthCheckPath: /health
+    envVars:
+      # Public. Render passes env vars to the Docker build as build args,
+      # so Vite can inline these two (Dockerfile: ARG VITE_*).
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      # Server only.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY_FALLBACK   # optional, leave empty if you have only one key
+        sync: false
+      - key: DISCORD_WEBHOOK_URL       # optional, only for send_discord_summary
+        sync: false
+      - key: SLACK_WEBHOOK_URL         # optional, only for send_slack_summary
+        sync: false
+      # Not secret. Same values as .env.example; config.ts has the same defaults.
+      - key: GEMINI_CHAT_MODEL
+        value: gemini-3.5-flash-lite
+      - key: GEMINI_CHAT_FALLBACK_MODEL
+        value: gemini-3.6-flash
+      - key: GEMINI_EMBED_MODEL
+        value: gemini-embedding-001
+      - key: SIMILARITY_THRESHOLD
+        value: "0.62"

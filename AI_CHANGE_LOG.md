@@ -722,3 +722,46 @@ Entry format:
 - **Files:** `client/src/components/WorkspaceNameDialog.tsx`, `client/src/components/Dashboard.tsx`
 - **What:** **⚠ AI mistake** (the user saw it in the create dialog: "Default_2" was filled in but "Create workspace" stayed disabled). The dialog's "unchanged" rule (renaming to the same name is a no-op) compared against `initialName`, which for Create is only a suggestion, so submitting the suggestion was blocked. The rule now uses a separate `currentName` prop that only Rename passes. Create still pre-fills `initialName`.
 - **Why:** Accepting the suggested name is the normal way to create a workspace.
+
+## 2026-11-18 15:25 IST: Fixes from the full code review (Discord guard, stuck rows, chat race)
+- **Files:** `server/src/services/tools.ts`, `server/src/services/chat.ts`, `server/src/services/toolLoop.ts`, `server/src/services/recovery.ts`, `server/src/services/ingest.ts`, `server/src/controllers/chat.controller.ts`, `server/src/controllers/document.controller.ts`, `server/test/tools.test.ts`, `client/src/components/ChatPanel.tsx`, `docs/DESIGN.md`, `PLAN.md`
+- **What:**
+  - **⚠ AI mistake (found in a whole-repo review the user asked for):** `send_discord_summary` only checked where the text came from. A summary with any valid `[cN]` label was posted, even if the user never asked to post. So an injected document in the same workspace as real data could get the model to post that data. Now the tool also checks in code that the user asked: their latest message must mention Discord or a posting verb (post, send, share, publish, forward), or the previous answer must be the fixed "What should I post to Discord?" question.
+  - **⚠ AI mistake (same review):** the Retry guard for Discord returned `already_sent` whenever this message had any successful post. A second, different post in the same turn was skipped but reported to the model as sent. Now the first Discord call of an attempt counts the posts earlier attempts made, and only that many calls in this attempt are skipped.
+  - Answers and uploads that stopped half-way while the server kept running (e.g. the final DB write failed) stayed `pending`/`processing` until a restart: endless "Thinking…" with no Retry, and the file blocked as a "duplicate". The server now keeps an in-memory set of the answers and uploads it's working on. Listing messages or documents marks rows that are `pending`/`processing` but not in that set as `failed`. Re-uploading such a file processes it again.
+  - Chat panel: opening chat A and then chat B quickly could show A's messages under B's title. A response for a chat that's no longer open is now dropped.
+  - Tool calls in the forced last reply (tools set to `NONE`) were dropped without a log row. They're now logged as `error` (not run), following hard rule 4.
+  - PLAN.md Part 0 still named the old chat and fallback models (they were swapped after Part 3).
+- **Why:** The user asked for the review's fixes. Points 5 (tool turns skip the citation guard) and 6 (an empty chat left by a failed first send) were left as known limits.
+
+## 2026-11-18 15:49 IST: Styled tooltip on the "Listed tasks" info icon
+- **Files:** `client/src/components/ChatMessage.tsx`, `client/src/index.css`
+- **What:** The ⓘ after "Listed tasks" used the browser's native `title` tooltip: a small white box that is slow to appear, looks out of place in dark mode and never shows for keyboard users. It's now a Primer-style CSS tooltip (dark bubble with an arrow, from `aria-label`), shown on hover and on keyboard focus (the icon is focusable). The text was also out of date: the assistant can mark tasks done now (`complete_task`), so it no longer says to use the Tasks tab for that. It explains that the list is the assistant's text, and the Tasks tab is where tasks can be ticked off or deleted.
+- **Why:** The user found the hover hard to read (screenshot of the chat).
+
+## 2026-11-18 16:36 IST: Slack posts, and deleting a workspace from chat (with confirmation)
+- **Files:** `server/src/config.ts`, `.env.example`, `server/src/services/tools.ts`, `server/src/services/toolLoop.ts`, `server/src/services/chat.ts`, `server/src/services/prompt.ts`, `server/src/controllers/chat.controller.ts`, `server/test/tools.test.ts`, `client/src/types.ts`, `client/src/components/ChatPanel.tsx`, `client/src/components/Dashboard.tsx`, `docs/DESIGN.md`, `docs/plans/slack-and-delete.md`, `PLAN.md`, `README.md`
+- **What:**
+  - `send_slack_summary` (Slack Incoming Webhook, `SLACK_WEBHOOK_URL`). It's built by the same helper as the Discord tool, so it has the same checks: the user asked, the text has a source, and Retry doesn't post twice. Slack's `<`, `>` and `&` are escaped, so `<!channel>` can't ping. "What should I post?" no longer names Discord.
+  - `delete_workspace`: when the user asks in chat to delete everything, the server replies with a fixed "Are you sure?" question. Only a reply that is an explicit yes, to a question the tool really asked (checked in `tool_calls`), deletes the workspace and everything in it. The client then switches to another workspace, or to a new "Default" if it was the only one. Plan: `docs/plans/slack-and-delete.md`.
+- **Why:** The user asked for Slack (the brief allows Slack or Discord) and for "delete everything" from chat, behind an "are you sure?" step. They chose the chat-only confirmation over a confirm button. It replaces the old "no delete tool" decision (DESIGN §5). It's named `delete_workspace`, not `delete_everything`, so the brief's injection test still logs `unknown_tool`. Both steps are code checks, so a document can't trigger it.
+
+## 2026-11-18 16:48 IST: Say which workspace you were switched to after a delete
+- **Files:** `client/src/components/Dashboard.tsx`
+- **What:** After a workspace is deleted (from chat or from the workspace menu), the toast now also says where you landed: "Deleted workspace “X”" with "Switched to “Y”" under it, or "Created and switched to “Y”" when a new one was made.
+- **Why:** The user asked to be told which workspace they were switched to after a delete.
+
+## 2026-11-18 23:07 IST: Deployment subdomain renamed to workspace-ai.brijeshhq.com
+- **Files:** `deploy/README.md`, `README.md`
+- **What:** Replaced the `assistant` subdomain with `workspace-ai` in the deploy guide: the DNS record, the `dig` check, `APP_DOMAIN`, the health-check `curl` and the Supabase Site URL. Filled the main README's `<LIVE_URL>` placeholder with `https://workspace-ai.brijeshhq.com`.
+- **Why:** The user didn't like `assistant.brijeshhq.com` (long, easy to misspell) and chose `workspace-ai`.
+
+## 2026-11-18 23:10 IST: Hosting moves from the Azure VM to Render (free plan)
+- **Files:** `render.yaml` (new), `deploy/README.md`, `deploy/compose.yml` (deleted), `Dockerfile` (comment only), `README.md`, `PLAN.md`, `CLAUDE.md`
+- **What:** The same Docker image now runs as a Render web service on the free plan. `render.yaml` describes it: Docker runtime, `/health` check, and env variable names, with secrets set in the dashboard and not in git. Render builds from the GitHub repo on every push to `main`, and its env variables reach the Dockerfile as build args, so `VITE_*` work as before. Render handles HTTPS and the custom domain (`workspace-ai.brijeshhq.com`, a Cloudflare CNAME), so Caddy and `deploy/compose.yml` are gone. `deploy/README.md` is rewritten for Render: setup, the free plan's sleep after 15 minutes idle (a keep-alive ping on `/health`), and running the seed from the laptop, because the free plan has no shell.
+- **Why:** The user wants to keep the project online for a long time without paying for VM resources, and picked Render's free plan over the paid Starter plan after hearing about the cold start.
+
+## 2026-11-19 00:45 IST: Render service name matches the dashboard
+- **Files:** `render.yaml`, `deploy/README.md`
+- **What:** The Render service is named `multi-workspace-rag-assistant` (the name the dashboard filled in from the repo), so its URL is `multi-workspace-rag-assistant.onrender.com`. The docs and the CNAME target use that name now. `deploy/README.md` also covers the manual "New Web Service" flow the user followed: add the env variables with "Add from .env", and set the health check path under Advanced.
+- **Why:** The user's screenshot of the Render setup page showed this name, not the `workspace-assistant` the docs used.

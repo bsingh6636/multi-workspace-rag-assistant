@@ -26,6 +26,8 @@ const envSchema = z.object({
   MAX_TOOL_ITERATIONS: z.coerce.number().int().min(1).max(5).default(3),
   // Optional: only the send_discord_summary tool needs it. Empty = not configured.
   DISCORD_WEBHOOK_URL: z.preprocess((v) => (v === '' ? undefined : v), z.url().optional()),
+  // Optional: only the send_slack_summary tool needs it (a Slack Incoming Webhook). Empty = not configured.
+  SLACK_WEBHOOK_URL: z.preprocess((v) => (v === '' ? undefined : v), z.url().optional()),
 });
 
 const parsed = envSchema.safeParse(process.env);

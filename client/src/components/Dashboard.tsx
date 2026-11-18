@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { deleteRequest, errorMessage, getRequest, patchRequest, postRequest } from '../lib/http'
 import { navigate, parseRoute, routePath, type Tab } from '../lib/route'
 import { nextDefaultName } from '../lib/workspaceNames'
-import type { Profile, Workspace, WorkspaceCounts } from '../types'
+import type { Profile, Workspace, WorkspaceCounts, WorkspaceDeleted } from '../types'
 import ChatPanel from './ChatPanel'
 import DeleteWorkspaceDialog from './DeleteWorkspaceDialog'
 import DocumentsPanel from './DocumentsPanel'
@@ -166,9 +166,28 @@ export default function Dashboard({ user }: { user: User }) {
     const remaining = workspaces.filter((ws) => ws.id !== active.id)
     setWorkspaces(remaining)
     setDialog(null)
-    toast.success(`Deleted workspace “${active.name}”`)
+    const next = remaining[0]
+    toast.success(`Deleted workspace “${active.name}”`, next && { description: `Switched to “${next.name}”` })
     // replace: Back shouldn't return to the deleted workspace's URL.
-    if (remaining[0]) await switchTo(remaining[0].id, { replace: true })
+    if (next) await switchTo(next.id, { replace: true })
+  }
+
+  // The user confirmed "delete everything" in chat. The server already deleted
+  // the workspace (making a new one if it was the only one) and remembered
+  // `next` as the last workspace. Reload the list and open `next`; replace, so
+  // Back doesn't return to the deleted workspace's URL.
+  async function workspaceDeletedFromChat({ deletedName, next, created }: WorkspaceDeleted) {
+    toast.success(`Deleted workspace “${deletedName}”`, {
+      description: created ? `Created and switched to “${next.name}”` : `Switched to “${next.name}”`,
+    })
+    try {
+      setWorkspaces(await getRequest<Workspace[]>('/workspaces'))
+      show(next.id, 'chat', { replace: true })
+    } catch {
+      // Couldn't fetch the list: point the URL at `next` and reload everything.
+      navigate(routePath(next.id, 'chat'), { replace: true })
+      retryLoad()
+    }
   }
 
   return (
@@ -239,7 +258,12 @@ export default function Dashboard({ user }: { user: User }) {
             </nav>
 
             {/* key: a new workspace gets a fresh panel, so the old workspace's data never flashes. */}
-            {tab === 'chat' && <ChatPanel key={active.id} workspaceId={active.id} onChange={refreshCounts} />}
+            {tab === 'chat' && <ChatPanel
+                key={active.id}
+                workspaceId={active.id}
+                onChange={refreshCounts}
+                onWorkspaceDeleted={workspaceDeletedFromChat}
+              />}
             {tab === 'documents' && <DocumentsPanel key={active.id} workspaceId={active.id} onChange={refreshCounts} />}
             {tab === 'tasks' && <TasksPanel key={active.id} workspaceId={active.id} onChange={refreshCounts} />}
             {tab === 'tool-calls' && <ToolCallsPanel key={active.id} workspaceId={active.id} onChange={refreshCounts} />}

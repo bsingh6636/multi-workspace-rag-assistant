@@ -247,7 +247,8 @@ function ToolCalls({ calls = [] }: { calls?: ToolCallSummary[] }) {
             {reason && <span className="msg-tool-reason">{` · ${reason}`}</span>}
             {/* The listed tasks are text the model wrote, so they can't be ticked here. */}
             {ok && c.tool_name === 'list_tasks' && (
-              <span className="msg-tool-info" title={TASKS_TAB_HINT} aria-label={TASKS_TAB_HINT} role="img">
+              // Focusable so keyboard users get the tooltip too (CSS shows it on :hover and :focus-visible).
+              <span className="msg-tool-info tooltipped" aria-label={TASKS_TAB_HINT} role="img" tabIndex={0}>
                 <InfoIcon size={12} />
               </span>
             )}
@@ -258,7 +259,7 @@ function ToolCalls({ calls = [] }: { calls?: ToolCallSummary[] }) {
   )
 }
 
-const TASKS_TAB_HINT = 'To mark tasks done or delete them, use the Tasks tab.'
+const TASKS_TAB_HINT = 'This list is a snapshot from when the answer was written. Open the Tasks tab for the live list, where you can tick off or delete tasks.'
 
 function describeToolCall(c: ToolCallSummary): string {
   const args = (c.args ?? {}) as Record<string, unknown>
@@ -275,6 +276,11 @@ function describeToolCall(c: ToolCallSummary): string {
       return ok ? 'Marked a task done' : "Couldn't mark the task done"
     case 'send_discord_summary':
       return ok ? 'Posted to Discord' : "Couldn't post to Discord"
+    case 'send_slack_summary':
+      return ok ? 'Posted to Slack' : "Couldn't post to Slack"
+    // Only step 1 (asking) is ever shown: after a confirmed delete, this chat is gone.
+    case 'delete_workspace':
+      return ok ? 'Asked to confirm deleting the workspace' : 'Did not delete the workspace'
     default:
       return `Asked for unknown tool “${c.tool_name}”`
   }

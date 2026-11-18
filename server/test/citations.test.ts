@@ -130,7 +130,7 @@ describe('fixed replies', () => {
     assert.deepEqual(result.citations, []);
   });
 
-  test('"What should I post to Discord?" passes as the fixed text', () => {
+  test('"What should I post?" passes as the fixed text', () => {
     const result = applyCitationGuard({
       answer: `${ASK_WHAT_TO_POST} Also, the code is 7731.`,
       chunks: [],

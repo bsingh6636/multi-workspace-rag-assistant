@@ -71,7 +71,7 @@ export type GuardResult = {
 //      [c1][c2] makes those chunks sources of this turn, even if the reply
 //      itself only says "Posted it".
 //   3. No valid citation, and the model gave one of the fixed replies ("I can't
-//      do that.", "What should I post to Discord? …") → the fixed text, built
+//      do that.", "What should I post? …") → the fixed text, built
 //      here, so nothing the model added after it gets through.
 //   4. No valid citation + no tool called + not small talk → fixed refusal.
 export function applyCitationGuard(input: {

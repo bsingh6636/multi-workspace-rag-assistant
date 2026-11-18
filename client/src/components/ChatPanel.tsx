@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { CommentDiscussionIcon, PaperAirplaneIcon, PlusIcon } from '@primer/octicons-react'
 import { toast } from 'sonner'
 import { errorMessage, getRequest, postRequest } from '../lib/http'
-import type { Chat, Message, SendResult } from '../types'
+import type { Chat, Message, RetryResult, SendResult, WorkspaceDeleted } from '../types'
 import ChatMessage from './ChatMessage'
 
 // Chat for the active workspace: the chat list on the left, the conversation and
@@ -10,7 +10,17 @@ import ChatMessage from './ChatMessage'
 // workspace's chats can never show here.
 // onChange: an answer may have saved or completed a task and logged tool calls,
 // so the Dashboard refetches its tab counts.
-export default function ChatPanel({ workspaceId, onChange }: { workspaceId: string; onChange: () => void }) {
+// onWorkspaceDeleted: the user confirmed "delete everything", so this workspace
+// (and this chat) is gone; the Dashboard switches to another one.
+export default function ChatPanel({
+  workspaceId,
+  onChange,
+  onWorkspaceDeleted,
+}: {
+  workspaceId: string
+  onChange: () => void
+  onWorkspaceDeleted: (info: WorkspaceDeleted) => void
+}) {
   const [chats, setChats] = useState<Chat[]>([])
   const [loadingChats, setLoadingChats] = useState(true)
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
@@ -22,6 +32,9 @@ export default function ChatPanel({ workspaceId, onChange }: { workspaceId: stri
   const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  // The chat whose messages should be on screen. A message list that arrives
+  // after another chat was opened (click A, then B, and A answers last) is dropped.
+  const openChatId = useRef<string | null>(null)
 
   const base = `/workspaces/${workspaceId}/chats`
 
@@ -39,22 +52,26 @@ export default function ChatPanel({ workspaceId, onChange }: { workspaceId: stri
   // Load the chat list and open the most recent chat.
   useEffect(() => {
     async function loadInitial() {
+      let first: string | null = null
       try {
         const list = await getRequest<Chat[]>(base)
         setChats(list)
         setLoadingChats(false) // show the list now, without waiting for the first chat's messages
         // Open the newest chat (or the new-chat view) with its saved draft.
-        const first = list[0]?.id ?? null
+        first = list[0]?.id ?? null
+        openChatId.current = first
         setActiveChatId(first)
         setDraft(loadDraft(draftKey(workspaceId, first)))
         focusInput(inputRef.current)
         if (!first) return
-        setMessages(await getRequest<Message[]>(`${base}/${first}/messages`))
+        const loaded = await getRequest<Message[]>(`${base}/${first}/messages`)
+        if (openChatId.current === first) setMessages(loaded)
       } catch (e) {
         toast.error(`Couldn't load chats: ${errorMessage(e)}`)
       } finally {
         setLoadingChats(false)
-        setLoadingMessages(false)
+        // If another chat was opened meanwhile, its own load ends the loading state.
+        if (openChatId.current === first) setLoadingMessages(false)
       }
     }
     loadInitial()
@@ -90,20 +107,23 @@ export default function ChatPanel({ workspaceId, onChange }: { workspaceId: stri
   }, [draft])
 
   async function openChat(chatId: string) {
+    openChatId.current = chatId
     setActiveChatId(chatId)
     showDraft(chatId)
     focusInput(inputRef.current)
     setLoadingMessages(true)
     try {
-      setMessages(await getRequest<Message[]>(`${base}/${chatId}/messages`))
+      const loaded = await getRequest<Message[]>(`${base}/${chatId}/messages`)
+      if (openChatId.current === chatId) setMessages(loaded)
     } catch (e) {
-      toast.error(`Couldn't load this chat: ${errorMessage(e)}`)
+      if (openChatId.current === chatId) toast.error(`Couldn't load this chat: ${errorMessage(e)}`)
     } finally {
-      setLoadingMessages(false)
+      if (openChatId.current === chatId) setLoadingMessages(false)
     }
   }
 
   function startNewChat() {
+    openChatId.current = null
     setActiveChatId(null)
     setMessages([])
     showDraft(null)
@@ -128,15 +148,20 @@ export default function ChatPanel({ workspaceId, onChange }: { workspaceId: stri
       if (!chatId) {
         const chat = await postRequest<Chat>(base)
         chatId = chat.id
+        openChatId.current = chat.id
         setActiveChatId(chat.id)
         const now = new Date().toISOString()
         setChats((list) => [{ ...chat, title: content.slice(0, 60), last_message_at: now }, ...list])
       }
 
-      const { userMessage, assistantMessage } = await postRequest<SendResult>(`${base}/${chatId}/messages`, {
-        content,
-        timeZone: browserTimeZone(),
-      })
+      const { userMessage, assistantMessage, workspaceDeleted } = await postRequest<SendResult>(
+        `${base}/${chatId}/messages`,
+        { content, timeZone: browserTimeZone() },
+      )
+      if (workspaceDeleted) {
+        onWorkspaceDeleted(workspaceDeleted)
+        return
+      }
       // Swap the placeholders for the saved rows (the answer may be 'failed').
       setMessages((list) => [...list.filter((m) => !placeholders.includes(m)), userMessage, assistantMessage])
     } catch (err) {
@@ -169,10 +194,14 @@ export default function ChatPanel({ workspaceId, onChange }: { workspaceId: stri
   async function retry(messageId: string) {
     setMessages((list) => list.map((m) => (m.id === messageId ? { ...m, status: 'pending', error: null } : m)))
     try {
-      const { assistantMessage } = await postRequest<{ assistantMessage: Message }>(
+      const { assistantMessage, workspaceDeleted } = await postRequest<RetryResult>(
         `${base}/${activeChatId}/messages/${messageId}/retry`,
         { timeZone: browserTimeZone() },
       )
+      if (workspaceDeleted) {
+        onWorkspaceDeleted(workspaceDeleted)
+        return
+      }
       setMessages((list) => list.map((m) => (m.id === messageId ? assistantMessage : m)))
     } catch (err) {
       toast.error(`Retry failed: ${errorMessage(err)}`)

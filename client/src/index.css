@@ -22,6 +22,8 @@
   --info-bg: #ddf4ff;
   --info-border: #54aeff66;
   --overlay-bg: #ffffff;
+  --tooltip-bg: #25292e;
+  --tooltip-fg: #ffffff;
   --overlay-shadow: 0 0 0 1px #d1d9e080, 0 6px 12px -3px #25292e0a, 0 6px 18px 0 #25292e1f;
   --backdrop: #25292e66;
   --hover: #818b981a;
@@ -62,6 +64,8 @@
     --info-bg: #388bfd1a;
     --info-border: #388bfd66;
     --overlay-bg: #151b23;
+    --tooltip-bg: #3d444d;
+    --tooltip-fg: #ffffff;
     --overlay-shadow: 0 0 0 1px #3d444d, 0 6px 12px -3px #01040966, 0 6px 18px 0 #01040966;
     --backdrop: #010409cc;
     --hover: #656c7633;
@@ -1646,8 +1650,86 @@ button {
 .msg-tool-info {
   display: inline-flex;
   margin-left: 4px;
+  border-radius: 50%;
   color: var(--fg-muted);
   cursor: help;
+}
+
+.msg-tool-info:hover,
+.msg-tool-info:focus-visible {
+  color: var(--accent);
+}
+
+.msg-tool-info:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+/* ---------- Tooltip (like Primer's .tooltipped) ----------
+   The text comes from aria-label, so screen readers and the bubble say the
+   same thing. Shown above the element, left-aligned with it, on hover or
+   keyboard focus, after a short delay so it doesn't flash while the mouse
+   passes over. Pure CSS: no positioning code. */
+
+.tooltipped {
+  position: relative;
+}
+
+.tooltipped::after,
+.tooltipped::before {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.1s ease-in;
+}
+
+/* The bubble. */
+.tooltipped::after {
+  content: attr(aria-label);
+  bottom: calc(100% + 7px);
+  left: -8px;
+  width: max-content;
+  max-width: min(280px, 70vw);
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-fg);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: break-word;
+  box-shadow: var(--overlay-shadow);
+}
+
+/* The arrow pointing down at the element. */
+.tooltipped::before {
+  content: '';
+  bottom: calc(100% + 1px);
+  left: 50%;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-bottom-width: 0;
+  border-top-color: var(--tooltip-bg);
+}
+
+.tooltipped:hover::after,
+.tooltipped:hover::before,
+.tooltipped:focus-visible::after,
+.tooltipped:focus-visible::before {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0.15s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltipped::after,
+  .tooltipped::before {
+    transition: none;
+  }
 }
 
 /* ---------- Answer details (retrieval debug panel) ---------- */

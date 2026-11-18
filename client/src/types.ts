@@ -95,8 +95,18 @@ export type Retrieval = {
   hit: boolean
 }
 
+/**
+ * Set when the user confirmed "delete everything" in chat: the workspace, with
+ * this chat, is gone. `next` is the workspace to open (`created` = the server
+ * made it because the deleted one was the user's only workspace).
+ */
+export type WorkspaceDeleted = { deletedName: string; next: { id: string; name: string }; created: boolean }
+
 /** POST /api/workspaces/:wsId/chats/:chatId/messages */
-export type SendResult = { userMessage: Message; assistantMessage: Message }
+export type SendResult = { userMessage: Message; assistantMessage: Message; workspaceDeleted: WorkspaceDeleted | null }
+
+/** POST …/messages/:messageId/retry */
+export type RetryResult = { assistantMessage: Message; workspaceDeleted: WorkspaceDeleted | null }
 
 /**
  * One page of a list endpoint (documents, tasks, tool calls), newest first.

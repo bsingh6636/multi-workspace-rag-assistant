@@ -22,8 +22,8 @@ A take-home assignment: a **multi-workspace document assistant** with RAG and to
   - Optional second key `GEMINI_API_KEY_FALLBACK` (another account): tried after the primary key for the same model, and skipped/used until a daily quota resets (`withKeys` in `services/gemini.ts`). Never log either key.
   - Embeddings: `gemini-embedding-001` with `outputDimensionality: 768`.
   - Don't use `gemini-3.8-flash` or `gemini-4-hydrogen` (often 503) or `gemini-2.5-flash` (404 for new users). All were tested on 2026-11-18.
-- **Validation:** zod. **Uploads:** multer + pdf-parse. **Notifications:** Discord webhook.
-- **Hosting:** the user's Azure VM (Docker + Compose), one app container behind Caddy for HTTPS (`deploy/`). Express serves `client/dist`. The image is built locally and copied over SSH; secrets go in `app.env` on the VM, never in the image. Deployment is the last step (Part 8). The recruiter said it can be skipped, so don't block other parts on it.
+- **Validation:** zod. **Uploads:** multer + pdf-parse. **Notifications:** Discord webhook and Slack Incoming Webhook.
+- **Hosting:** Render, free plan: one Docker web service built from the root `Dockerfile`, described in `render.yaml`, steps in `deploy/README.md`. Render builds on every push to `main` and serves HTTPS at `workspace-ai.brijeshhq.com` (Cloudflare CNAME, DNS only). Express serves `client/dist`. Secrets are set in the Render dashboard and are never in git or the image. Only the `VITE_*` values are declared as build args. The free plan sleeps after 15 min idle and has no shell (run the seed from the laptop). Moved from the Azure VM on 2026-11-18 to save cost. Deployment is the last step (Part 8). The recruiter said it can be skipped, so don't block other parts on it.
 - No Next.js, no server actions, no ORM. Keep the code simple enough for the user to explain every line in an interview.
 
 ## Hard rules (never break these)

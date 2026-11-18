@@ -1,7 +1,7 @@
 # Build Plan
 
 Work through one part per AI session. Start each session with: *"Read CLAUDE.md, PLAN.md and docs/DESIGN.md, then do Part N."*
-Tick the boxes as you finish. Test each part locally, then commit before starting the next one. Deployment (Docker on the user's Azure VM) happens in Part 8.
+Tick the boxes as you finish. Test each part locally, then commit before starting the next one. Deployment (Docker on Render, free plan) happens in Part 8.
 
 Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are required, 7 is optional, and 8 is required (docs).
 
@@ -14,7 +14,7 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 - [x] Scaffold `/server` (Express + TS, `GET /health`) and `/client` (Vite React TS)
 - [x] Express serves `client/dist` with a catch-all to `index.html`
 - [x] `.env.example` with no real values
-- [x] Get a Gemini key from AI Studio and check the current free chat and embedding model names. Chosen: `gemini-3.6-flash` (chat), `gemini-3.5-flash-lite` (fallback), `gemini-embedding-001` (768). See DESIGN.md §6
+- [x] Get a Gemini key from AI Studio and check the current free chat and embedding model names. Chosen: `gemini-3.5-flash-lite` (chat), `gemini-3.6-flash` (fallback), `gemini-embedding-001` (768). Swapped after Part 3. See DESIGN.md §6
 
 **Done when:** locally, the React page loads, `/health` returns 200, and the 8 tables exist in Supabase. (Deployment moved to Part 8.)
 
@@ -63,6 +63,7 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 - [x] Routes: `GET /api/workspaces/:wsId/tool-calls`, `GET /api/workspaces/:wsId/tasks`
 
 - [x] The citation guard skips the refusal when a tool was called in this turn
+- [x] Added later (2026-11-18, user request, `docs/plans/slack-and-delete.md`): `send_slack_summary` (same checks as Discord) and `delete_workspace` (chat "delete everything", then a fixed "Are you sure?", and an explicit yes deletes; both steps checked in code)
 
 **Done when:** "create a task to X" adds a task row and a log row. A **tool-only request with no matching docs** ("save a task: call the vendor Friday" in workspace B) still reaches the LLM and creates the task. An invalid or unknown call is logged without crashing, and a multi-step call (save, then Discord) works.
 
@@ -88,7 +89,7 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 
 ## Part 8: Deploy + docs (~1.5h)
 - [ ] `Dockerfile` (multi-stage: build client and server, then a slim runtime image) and `.dockerignore`. Check that `docker run` works locally
-- [ ] Deploy the image to the Azure VM with `deploy/compose.yml` (app + Caddy for HTTPS). Env vars live in `app.env` on the VM, never baked into the image (except the public `VITE_*` values)
+- [ ] Deploy to Render (free plan) from `render.yaml`, with the custom domain `workspace-ai.brijeshhq.com`. Env vars live in the Render dashboard, never baked into the image (except the public `VITE_*` values). Moved from the Azure VM on 2026-11-18 to save the VM's cost
 - [ ] Add the deployed URL to Supabase **Authentication → URL Configuration → Redirect URLs**
 - [ ] Fill in the live URL and demo login in `README.md`, and update anything that changed
 - [ ] `.env.example` is complete

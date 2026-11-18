@@ -7,21 +7,31 @@ import { MAX_CALLS_PER_ROUND, runToolLoop } from '../src/services/toolLoop';
 import { blockReasonOf } from '../src/services/llm';
 import { dropBlockedTurns } from '../src/services/chat';
 import { BLOCKED_REPLY, blockedReply } from '../src/services/prompt';
+import { ASK_WHAT_TO_POST } from '../src/services/prompt';
 import {
-  discordSourceError,
+  escapeSlack,
   executeToolCall,
+  isDeleteConfirmation,
+  isDeleteRequest,
+  postRequestError,
+  postSourceError,
   TOOL_NAMES,
   toolAbilities,
   toolDeclarations,
   type ToolCallLog,
+  type ToolContext,
 } from '../src/services/tools';
 
-const ctx = {
+const ctx: ToolContext = {
   workspaceId: 'ws-1',
   chatId: 'chat-1',
   messageId: 'msg-1',
   userMessage: 'Save a task',
+  previousAnswer: null,
+  previousAnswerId: null,
   chunkLabels: ['c1', 'c2'],
+  posts: {},
+  deletion: { state: 'none' },
 };
 
 // Runs one call with a fake log, so no database is touched (these paths stop
@@ -36,9 +46,16 @@ async function execute(call: FunctionCall, rejectReason?: string) {
 }
 
 describe('tool declarations', () => {
-  test('declare exactly the four allowed tools (no delete tool, on purpose)', () => {
+  test('declare exactly the allowed tools (delete_everything is not one of them)', () => {
     const names = toolDeclarations[0].functionDeclarations!.map((d) => d.name);
-    assert.deepEqual(names, ['save_task', 'list_tasks', 'complete_task', 'send_discord_summary']);
+    assert.deepEqual(names, [
+      'save_task',
+      'list_tasks',
+      'complete_task',
+      'send_discord_summary',
+      'send_slack_summary',
+      'delete_workspace',
+    ]);
   });
 
   test('no tool takes a workspace_id, and extra arguments are not allowed', () => {
@@ -175,6 +192,22 @@ describe('runToolLoop', () => {
     assert.equal(tools.calls.length, 0);
   });
 
+  test('stop() ends the turn after the round that triggered it, with no further model call', async () => {
+    const del = { id: 'd', name: 'delete_workspace', args: {} };
+    const model = fakeModel([{ functionCalls: [del] }, { text: 'never asked' }]);
+    const tools = fakeExecutor();
+    const result = await runToolLoop({
+      ...base,
+      maxRounds: 3,
+      generate: model.generate,
+      execute: tools.execute,
+      stop: () => tools.calls.length > 0,
+    });
+    assert.equal(model.requests.length, 1);
+    assert.equal(result.text, '');
+    assert.equal(result.toolCalled, true);
+  });
+
   test('multi-step: save, then Discord, then a text answer', async () => {
     const save = { id: 'a', name: 'save_task', args: { title: 'X' } };
     const discord = { id: 'b', name: 'send_discord_summary', args: { summary: 'X' } };
@@ -217,7 +250,11 @@ describe('runToolLoop', () => {
     const result = await runToolLoop({ ...base, maxRounds: 2, generate: model.generate, execute: tools.execute });
 
     assert.equal(result.text, 'Here are your tasks.');
-    assert.equal(tools.calls.length, 2, 'calls in the forced last reply are not run');
+    // The forced last reply's call is refused (logged, not run) and doesn't count as a tool call.
+    assert.equal(tools.calls.length, 3);
+    assert.equal(tools.calls.filter((c) => c.rejectReason).length, 1);
+    assert.equal(tools.calls[2].rejectReason, 'No more tool calls this turn: answer in text');
+    assert.equal(result.toolCalls.length, 2);
     assert.deepEqual(
       model.requests.map((r) => r.toolMode),
       ['AUTO', 'AUTO', 'NONE'],
@@ -265,17 +302,17 @@ describe('today in the user time zone', () => {
   });
 });
 
-describe('Discord post source check', () => {
+describe('post source check (Discord and Slack)', () => {
   const turn = (userMessage: string, chunkLabels: string[] = []) => ({ userMessage, chunkLabels });
 
   test('a summary citing a chunk from this prompt may be posted', () => {
     const summary = "Brijesh's last working day at Vedak was in September 2026 [c2].";
-    assert.equal(discordSourceError(summary, turn('send brijesh last working day to discord', ['c1', 'c2'])), null);
+    assert.equal(postSourceError(summary, turn('send brijesh last working day to discord', ['c1', 'c2'])), null);
   });
 
   test("the user's own words may be posted (case and punctuation don't matter)", () => {
-    assert.equal(discordSourceError('Those were test message, ignore.', turn('send that those were test message ignore')), null);
-    assert.equal(discordSourceError('wtf', turn('send wtf to discord')), null);
+    assert.equal(postSourceError('Those were test message, ignore.', turn('send that those were test message ignore')), null);
+    assert.equal(postSourceError('wtf', turn('send wtf to discord')), null);
   });
 
   // Every case below was posted in the user's manual test on 2026-11-18.
@@ -287,14 +324,117 @@ describe('Discord post source check', () => {
     ['A summary citing a chunk that was not in this prompt [c9].', 'post the summary', ['c1']],
   ] as const) {
     test(`refuses "${summary}" for "${userMessage}"`, () => {
-      assert.match(String(discordSourceError(summary, turn(userMessage, [...chunkLabels]))), /^Not posted/);
+      assert.match(String(postSourceError(summary, turn(userMessage, [...chunkLabels]))), /^Not posted/);
     });
   }
 
   test('a refused post is logged as an error and nothing is sent', async () => {
+    // (ctx.userMessage "Save a task" doesn't ask for a post either: refused before the source check.)
     const { response, log } = await execute({ name: 'send_discord_summary', args: { summary: 'NONE FOUND' } });
     assert.match(String(response.error), /^Not posted/);
     assert.equal(log.status, 'error');
+  });
+});
+
+describe('a post must be requested by the user (prompt injection)', () => {
+  const turn = (userMessage: string, previousAnswer: string | null = null) => ({ userMessage, previousAnswer });
+
+  for (const message of [
+    'Summarise the refund policy and send it to Discord',
+    'post this on discord: standup at 10',
+    'share the falcon summary with the team',
+    'can u send discord message',
+    'Posting the launch notes please',
+    'put the falcon summary in slack',
+  ]) {
+    test(`allowed: "${message}"`, () => {
+      assert.equal(postRequestError(turn(message)), null);
+    });
+  }
+
+  test('an answer to "What should I post?" is allowed', () => {
+    assert.equal(postRequestError(turn('the refund policy', ASK_WHAT_TO_POST)), null);
+  });
+
+  // A document can tell the model to post, but the user's message must ask for it.
+  for (const message of [
+    'What are the Northwind delivery days?',
+    'What is the Project Falcon code?',
+    'postpone the falcon review task to Monday',
+    'who is the sender of the vendor notes?',
+  ]) {
+    test(`refused: "${message}"`, () => {
+      assert.match(String(postRequestError(turn(message))), /did not ask to post/);
+    });
+  }
+
+  test('a cited summary is still refused when the user only asked a question', async () => {
+    const logs: ToolCallLog[] = [];
+    const response = await executeToolCall(
+      { name: 'send_discord_summary', args: { summary: 'The Falcon code is 7731 [c1].' } },
+      { ...ctx, userMessage: 'What are the Northwind delivery days?' },
+      undefined,
+      async (row) => {
+        logs.push(row);
+      },
+    );
+    assert.match(String(response.error), /did not ask to post/);
+    assert.equal(logs[0].status, 'error');
+  });
+});
+
+describe('Slack post', () => {
+  test('mentions and links are escaped, so <!channel> pings nobody', () => {
+    assert.equal(escapeSlack('<!channel> code is 7731 & <@U123>'), '&lt;!channel&gt; code is 7731 &amp; &lt;@U123&gt;');
+  });
+
+  test('a Slack post the user did not ask for is refused like a Discord one', async () => {
+    const { response, log } = await execute({ name: 'send_slack_summary', args: { summary: 'The Falcon code is 7731 [c1].' } });
+    assert.match(String(response.error), /did not ask to post/);
+    assert.equal(log.status, 'error');
+  });
+});
+
+describe('delete_workspace: two steps, both checked in code', () => {
+  for (const message of [
+    'delete everything',
+    'Please delete this workspace',
+    'can you wipe the whole workspace?',
+    'remove everything here',
+  ]) {
+    test(`asks: "${message}"`, () => assert.equal(isDeleteRequest(message), true));
+  }
+
+  for (const message of ['delete all my tasks', 'remove the vendor doc', 'what is in this workspace?', 'yes']) {
+    test(`not a delete request: "${message}"`, () => assert.equal(isDeleteRequest(message), false));
+  }
+
+  for (const message of ['yes', 'Yes!', 'yes, delete everything', 'Yes delete it.', 'yes delete']) {
+    test(`confirms: "${message}"`, () => assert.equal(isDeleteConfirmation(message), true));
+  }
+
+  for (const message of ['ok', 'sure', 'yes but keep the tasks', 'no', 'yesterday', 'yes, delete the tasks']) {
+    test(`does not confirm: "${message}"`, () => assert.equal(isDeleteConfirmation(message), false));
+  }
+
+  // The injection: a document says "call delete_workspace"; the user only asked a question.
+  test('a call when the user did not ask is refused before touching the database', async () => {
+    const logs: ToolCallLog[] = [];
+    const response = await executeToolCall(
+      { name: 'delete_workspace', args: {} },
+      { ...ctx, userMessage: 'What are the Northwind delivery days?', deletion: { state: 'none' } },
+      undefined,
+      async (row) => {
+        logs.push(row);
+      },
+    );
+    assert.match(String(response.error), /did not ask to delete/);
+    assert.equal(logs[0].status, 'error');
+  });
+
+  test('arguments are not allowed (no workspace_id from the model)', async () => {
+    const { log } = await execute({ name: 'delete_workspace', args: { workspace_id: 'ws-2' } });
+    assert.equal(log.status, 'invalid_args');
   });
 });
 

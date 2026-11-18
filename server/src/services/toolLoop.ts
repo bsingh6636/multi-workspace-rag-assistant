@@ -31,6 +31,9 @@ export async function runToolLoop(input: {
   generate: (req: LlmRequest) => Promise<LlmResult>;
   // Runs (or, with rejectReason, refuses and logs) one call. Returns what the model sees.
   execute: (call: FunctionCall, rejectReason?: string) => Promise<Record<string, unknown>>;
+  // Checked after each round of calls: true ends the turn with no text (the
+  // caller writes the answer). Used when delete_workspace removed the chat itself.
+  stop?: () => boolean;
 }): Promise<LoopResult> {
   const contents = [...input.contents];
   let model: string | undefined; // pinned after the first reply…
@@ -56,6 +59,12 @@ export async function runToolLoop(input: {
     tokensOut += reply.tokensOut ?? 0;
 
     if (reply.functionCalls.length === 0 || lastRound) {
+      // Calls in the forced last reply (tools off) aren't run, but every call
+      // the model asks for is logged (hard rule 4). They don't count as "a tool
+      // was called" for the citation guard: nothing ran.
+      for (const call of reply.functionCalls) {
+        await input.execute(call, 'No more tool calls this turn: answer in text');
+      }
       if (!reply.text) throw new Error('The model returned no text answer');
       return { text: reply.text, toolCalled: toolCalls.length > 0, toolCalls, model, tokensIn, tokensOut };
     }
@@ -70,6 +79,7 @@ export async function runToolLoop(input: {
       const response = await input.execute(call, rejectReason);
       responses.push({ functionResponse: { id: call.id, name: call.name, response } });
     }
+    if (input.stop?.()) return { text: '', toolCalled: true, toolCalls, model, tokensIn, tokensOut };
     contents.push({ role: 'user', parts: responses });
   }
 }

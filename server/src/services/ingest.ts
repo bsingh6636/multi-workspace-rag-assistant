@@ -6,6 +6,7 @@ import { chunkMarkdown, chunkPages, normalizeText, type Chunk } from './chunker'
 import { embedTexts } from './embeddings';
 import { describeAiError } from './gemini';
 import { extractText } from './extract';
+import { inProgress, isAbandonedUpload } from './recovery';
 import { documentSizeError } from './uploadLimit';
 
 // Chunks are embedded and inserted 20 at a time: each row carries 768 floats.
@@ -48,12 +49,13 @@ export async function ingestDocument(workspaceId: string, file: UploadedFile): P
   const contentHash = createHash('sha256').update(fullText).digest('hex');
 
   const existing = await findByHash(workspaceId, contentHash);
-  if (existing && existing.status !== 'failed') {
+  if (existing && existing.status !== 'failed' && !isAbandonedUpload(existing)) {
     return { document: existing, duplicate: true };
   }
   if (existing) {
-    // A previous attempt failed (e.g. Gemini was down). Clear it and try again,
-    // otherwise its hash would block this file forever.
+    // A previous attempt failed (e.g. Gemini was down) or was left half-done
+    // (recovery.ts). Clear it and try again, otherwise its hash would block
+    // this file forever.
     const { error } = await supabase.from('documents').delete().eq('id', existing.id);
     if (error) throw error;
   }
@@ -73,6 +75,17 @@ export async function ingestDocument(workspaceId: string, file: UploadedFile): P
   if (insertError) throw insertError;
 
   // 4. Embed and store the chunks, then mark the document ready or failed.
+  //    While this runs the document is "in progress", so the list doesn't take
+  //    it for a left-behind upload.
+  inProgress.uploads.add(document.id);
+  try {
+    return await embedAndStore(workspaceId, document, chunks);
+  } finally {
+    inProgress.uploads.delete(document.id);
+  }
+}
+
+async function embedAndStore(workspaceId: string, document: DocumentRow, chunks: Chunk[]): Promise<IngestResult> {
   try {
     for (let i = 0; i < chunks.length; i += INSERT_BATCH) {
       const batch = chunks.slice(i, i + INSERT_BATCH);
