@@ -18,7 +18,7 @@ A take-home assignment: a **multi-workspace document assistant** with RAG and to
 - **DB:** Supabase Postgres + pgvector, with SQL in `/sql`
 - **Auth:** Supabase Auth. The client sends the JWT in `Authorization: Bearer`, and the server verifies it with `supabase.auth.getUser(token)`.
 - **LLM and embeddings:** Gemini via `@google/genai`. Model names come from env, never hard-coded in calls.
-  - Chat: `gemini-3.6-flash`. Fallback: `gemini-3.5-flash-lite`, used after retries on the primary fail with 429/503.
+  - Chat: `gemini-3.5-flash-lite`. Fallback: `gemini-3.6-flash`, used after retries on the primary fail with 429/503. (Swapped after Part 3: 3.6-flash kept returning 503, then 429.)
   - Embeddings: `gemini-embedding-001` with `outputDimensionality: 768`.
   - Don't use `gemini-3.8-flash` or `gemini-4-hydrogen` (often 503) or `gemini-2.5-flash` (404 for new users). All were tested on 2026-11-18.
 - **Validation:** zod. **Uploads:** multer + pdf-parse. **Notifications:** Discord webhook.
@@ -56,6 +56,10 @@ Password reset, custom or refresh tokens, message pagination, read receipts, cha
    Get the time with `date '+%Y-%m-%d %H:%M %Z'`. If the change fixes a mistake the AI made earlier, mark it **⚠ AI mistake** and say how it was noticed.
 3. At the end of a part: tick its boxes in `PLAN.md`, then the user tests it on the live URL and commits. One commit or more per part, because commit history is graded. Commit only when the user asks.
 4. If a decision changes, update `docs/DESIGN.md` (and the README if it's affected) in the same session.
+5. **Keep the "what can you do" answer current.** Whenever a feature is added, changed or removed, update the abilities the assistant lists:
+   - A tool: set its `ability` line in the registry (`server/src/services/tools.ts`). The prompt is built from it.
+   - Anything that isn't a tool: edit the fixed `abilities` list in `buildSystemPrompt` (`server/src/services/prompt.ts`).
+   - If the change adds new "about you" wording users might type, add it to the small-talk patterns in `server/src/services/citations.ts`, with a test.
 
 ## Repo layout
 

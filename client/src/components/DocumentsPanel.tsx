@@ -97,7 +97,7 @@ export default function DocumentsPanel({ workspaceId }: { workspaceId: string })
     >
       <header className="box-header">
         <h2>
-          Documents <span className="counter">{documents.length}</span>
+          Documents {!loading && <span className="counter">{documents.length}</span>}
         </h2>
         <button type="button" className="btn btn-sm" onClick={() => fileInput.current?.click()}>
           <UploadIcon />
@@ -116,11 +116,7 @@ export default function DocumentsPanel({ workspaceId }: { workspaceId: string })
         />
       </header>
 
-      {loading && (
-        <div className="blankslate" aria-busy="true">
-          <span className="spinner" aria-hidden="true" />
-        </div>
-      )}
+      {loading && <DocumentsSkeleton />}
 
       {loadError && (
         <p className="flash flash-error box-flash" role="alert">
@@ -209,4 +205,25 @@ function plural(n: number, word: string) {
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+// Placeholder rows shaped like document rows (icon, name, meta, status), so the
+// panel keeps its height when the real list arrives.
+const SKELETON_NAME_WIDTHS = ['45%', '60%', '35%']
+
+function DocumentsSkeleton() {
+  return (
+    <ul className="box-list" aria-busy="true" aria-label="Loading documents">
+      {SKELETON_NAME_WIDTHS.map((width, i) => (
+        <li key={i} className="box-row" aria-hidden="true">
+          <div className="skeleton doc-skeleton-icon" />
+          <div className="doc-main doc-skeleton-text">
+            <div className="skeleton doc-skeleton-name" style={{ width }} />
+            <div className="skeleton doc-skeleton-meta" />
+          </div>
+          <div className="skeleton doc-skeleton-status" />
+        </li>
+      ))}
+    </ul>
+  )
 }

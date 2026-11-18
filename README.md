@@ -60,8 +60,9 @@ Express
    └─ services/
         ingest.ts    parse → hash → chunk → embed → insert
         retrieve.ts  embed query → match_chunks(ws_id, …) → threshold
-        llm.ts       Gemini chat + tool loop, retry with backoff on 429
-        tools.ts     tool registry (allowlist) + zod schemas + executors
+        llm.ts       one Gemini call: retry with backoff on 429/5xx, then the fallback model
+        toolLoop.ts  the tool loop (max 3 rounds, then a forced text answer)
+        tools.ts     tool registry (allowlist) + strict zod schemas + executors + tool_calls log
    ▼
 Supabase Postgres + pgvector
 ```
@@ -177,14 +178,15 @@ retrieve top-k chunks for this workspace (filter inside the query)
 keep only chunks with similarity ≥ THRESHOLD (zero is allowed)
 
 messages = system prompt + <documents> (kept chunks, or NONE FOUND) + history + question
-loop (max 3):                       ← the LLM is always called, with tools attached
+loop (max 3 rounds):                ← the LLM is always called, with tools attached
   call Gemini with tool schemas
   text?       → citation guard → save assistant message with citations → done
-  tool call?
+  tool call?  (max 5 per reply)
     unknown tool          → log unknown_tool, return error to model
     zod validation fails  → log invalid_args, return error to model
-    execute with server-injected workspace_id
+    execute with server-injected workspace_id / chat_id / message_id
     log success/error to tool_calls, append result, continue
+rounds used up → one last call with tools off, so the model must answer in text
 on LLM error → mark assistant message failed so the user can retry
 ```
 
@@ -197,7 +199,8 @@ There is no separate "is a tool needed?" LLM call. The tool definitions are sent
 - **Delimiters:** retrieved chunks are wrapped in `<documents><chunk label="c1" filename="…" section="…">…</chunk></documents>`. The system prompt says that text inside these tags is data and never instructions.
 - **Tool allowlist:** only `save_task`, `list_tasks` and `send_discord_summary` exist. A request for `delete_everything` is logged as `unknown_tool` and nothing runs.
 - **Server-injected scope:** tools receive `workspace_id` from the server. Even a manipulated tool call can't reach another workspace.
-- **Argument validation:** every tool argument is parsed with zod before it is executed.
+- **Argument validation:** every tool argument is parsed with a strict zod schema before it is executed. Unknown arguments (like an invented `workspace_id`) are rejected, not ignored.
+- **Discord:** `@everyone`/`@here` in a summary can't ping anyone (`allowed_mentions` is empty), and the webhook URL never appears in results or logs.
 
 ### "I don't know"
 
@@ -243,8 +246,8 @@ PORT=3000
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=       # server only, never sent to the client
 GEMINI_API_KEY=
-GEMINI_CHAT_MODEL=gemini-3.6-flash
-GEMINI_CHAT_FALLBACK_MODEL=gemini-3.5-flash-lite   # used when the primary is rate-limited or overloaded
+GEMINI_CHAT_MODEL=gemini-3.5-flash-lite
+GEMINI_CHAT_FALLBACK_MODEL=gemini-3.6-flash      # used when the primary is rate-limited or overloaded
 GEMINI_EMBED_MODEL=gemini-embedding-001          # called with outputDimensionality 768
 GEMINI_EMBED_RPM=100                             # embedding quota per minute (AI Studio → Rate limits);
 GEMINI_EMBED_TPM=30000                           #   one upload may use at most 95% of it

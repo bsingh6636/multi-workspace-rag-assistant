@@ -259,3 +259,202 @@ Entry format:
 - **Files:** `PLAN.md`
 - **What:** Added a Part 8 item: review the list endpoints that can grow (documents, chats, tool-call log, tasks) and make sure each has a limit or pagination. Message pagination inside a chat stays out of scope (CLAUDE.md).
 - **Why:** The user asked to be reminded to check pagination where it's needed, at the end of the build.
+
+## 2026-11-18 06:06 IST: Part 4 plan: tool loop
+- **Files:** `docs/plans/part-4-tool-loop.md` (new)
+- **What:** Plan for the tool registry (`save_task`, `list_tasks`, `send_discord_summary`), the loop (max 3 rounds, then a forced text answer), logging every call to `tool_calls`, the two GET routes, idempotent side effects on Retry, and the browser's time zone for "today". It records a real tool-call probe on `gemini-3.5-flash-lite`. The reply carries a `thoughtSignature`, so the model's turn must be sent back unchanged.
+- **Why:** Session workflow: each part's plan is written before its code.
+
+## 2026-11-18 06:06 IST: Part 4 code: tool registry, loop, logging, tasks and tool-call routes
+- **Files:** `server/src/config.ts`, `server/src/services/tools.ts` (new), `server/src/services/toolLoop.ts` (new), `server/src/services/llm.ts`, `server/src/services/prompt.ts`, `server/src/services/chat.ts`, `server/src/controllers/chat.controller.ts`, `server/src/controllers/task.controller.ts` (new), `server/src/controllers/toolCall.controller.ts` (new), `server/src/routes/task.routes.ts` (new), `server/src/routes/toolCall.routes.ts` (new), `server/src/routes/workspace.routes.ts`, `server/test/tools.test.ts` (new), `client/src/components/ChatPanel.tsx`
+- **What:** As in the plan.
+  - The model calls tools from an allowlist. Arguments are checked with strict zod schemas, which also produce the Gemini declarations.
+  - `workspaceId`, `chatId` and `messageId` come from the server.
+  - Every attempt is logged with its status and latency.
+  - The loop runs up to `MAX_TOOL_ITERATIONS` rounds and keeps one model for the whole turn.
+  - The citation guard gets `toolCalled`.
+  - "Today" uses the browser's time zone.
+- **Why:** PLAN Part 4. Tool-only requests ("save a task…") must work even when no documents match (hard rule 7).
+
+## 2026-11-18 06:12 IST: ⚠ AI mistake: Discord posts contained [cN] labels, and the summary answer had no sources
+- **Files:** `server/src/services/tools.ts`, `server/src/services/toolLoop.ts`, `server/src/services/citations.ts`, `server/src/services/chat.ts`, `server/src/services/prompt.ts`, `server/test/citations.test.ts`, `server/test/tools.test.ts`
+- **What:**
+  - `send_discord_summary` removes `[cN]` labels before posting. They're prompt-local and mean nothing in Discord.
+  - The loop now returns every tool call of the turn. The citation guard also counts valid labels found in those calls' arguments (`toolText`), so an answer whose facts went into a Discord summary still lists its sources. Only labels that exist in this prompt count, and the answer text is unchanged.
+  - The prompt says not to put `[cN]` labels in tool arguments.
+- **Why:** The Part 4 end-to-end run. "Summarise the Project Falcon document and send it to Discord" posted "…payments gateway [c2]…" to the webhook. The model cited in the tool argument instead of its reply ("I have posted the summary…"), so the answer had 0 citations. A tool was called, so the guard let it through without sources. The plan assumed the model would follow "cite the chunks in your reply". It didn't, so this is enforced in code.
+
+## 2026-11-18 06:15 IST: Docs match the built tool loop; tick Part 4 in PLAN.md; record results
+- **Files:** `docs/DESIGN.md`, `README.md`, `PLAN.md`, `docs/plans/part-4-tool-loop.md`
+- **What:**
+  - DESIGN §4: the guard also counts labels from tool arguments.
+  - DESIGN §5 is rewritten to match the code:
+    - strict schemas generated into the declarations
+    - the loop with a forced text answer
+    - one model per turn
+    - at most 5 calls per reply
+    - `toolCalled` means "any attempt"
+    - idempotent side effects on Retry
+    - Discord safety (labels stripped, mentions off)
+    - the browser's time zone
+  - README: the layout lists `toolLoop.ts`; the tool loop sketch and the defenses list match.
+  - PLAN: the Part 4 boxes are ticked.
+  - The plan file gets a results section.
+- **Why:** Session workflow: decisions that changed are written into DESIGN and the README in the same session.
+
+## 2026-11-18 06:35 IST: gemini-3.5-flash-lite becomes the primary chat model everywhere
+- **Files:** `.env.example`, `server/src/config.ts`, `README.md`, `docs/DESIGN.md`, `CLAUDE.md`
+- **What:** The primary chat model is `gemini-3.5-flash-lite` and the fallback is `gemini-3.6-flash`, in the config defaults, `.env.example`, the README, DESIGN §6 and CLAUDE.md.
+- **Why:** The user decided flash-lite is primary. Their `server/.env` already used that order, and the docs said the reverse.
+  - In Part 3, `gemini-3.6-flash` returned 503 on every call (20–60 s answers via the fallback). It later returned 429 because its daily quota was used up.
+  - flash-lite answered in about 1 s, with correct citations and tool calls (research note §2).
+
+## 2026-11-18 06:35 IST: Remove the empty duplicate DISCORD_WEBHOOK_URL line from server/.env
+- **Files:** `server/.env` (gitignored, local only)
+- **What:** Deleted the empty `DISCORD_WEBHOOK_URL=` line. The URL the user added further down is kept unchanged.
+- **Why:** With two lines, only the last one counts (it did load correctly). An empty line above it is easy to misread, or to "fix" the wrong one.
+
+## 2026-11-18 06:35 IST: Chat answers show the tool calls they made, with the reason when one failed
+- **Files:** `server/src/controllers/chat.controller.ts`, `server/src/services/chat.ts`, `server/src/db.ts`, `client/src/types.ts`, `client/src/components/ChatMessage.tsx`, `client/src/index.css`, `docs/DESIGN.md`
+- **What:**
+  - The messages API embeds each answer's tool calls (`tool_calls(tool_name, status, error, args, created_at)`, oldest first) through the `message_id` foreign key.
+  - Under an answer, the client shows a small line per call. A success reads like "✓ Saved task “Review the Falcon launch plan”". A failure reads like "✕ Discord: Discord isn't set up on this server", with the stored reason.
+  - Identical repeats from a Retry are shown once.
+  - Every attempt, with its reason, is already stored in `tool_calls` (status and error).
+- **Why:** The user confirmed that every attempt is recorded, a failed one with its reason, and asked for it to be shown in small text.
+
+## 2026-11-18 06:38 IST: ⚠ AI mistake: the chat overflowed phone screens when a chat title is long
+- **Files:** `client/src/index.css`
+- **What:** The chat grid columns are `minmax(0, 1fr)` instead of `1fr` (desktop `240px minmax(0, 1fr)`, phone `minmax(0, 1fr)`). Now a long chat title is cut off with "…" as intended, instead of widening the whole chat. The new tool-call lines are block lines inside a list limited to 90% of the message width. Before, they were squeezed into a narrow column ("Posted to / Discord").
+- **Why:** Found in the Part 4 browser check (390px screenshot): with the title "Post this exact message to Discord: Test messa…", messages and the composer were cut off on the right.
+  - A `1fr` grid column can't be narrower than its content, so the `nowrap` title set the width. The Part 3 check used a short title, so it didn't show up.
+  - The narrow tool lines came from this session's CSS: a percentage `max-width` on an item inside a list that sizes itself to its content.
+
+## 2026-11-18 06:41 IST: "What abilities do you have?" counts as small talk; task questions go through list_tasks
+- **Files:** `server/src/services/citations.ts`, `server/src/services/prompt.ts`, `server/test/citations.test.ts`, `docs/DESIGN.md`
+- **What:**
+  - The small-talk check now also matches questions about the assistant itself: "what abilities/capabilities/features/tools do you have", "what are your abilities", "what can you / this chat / the model do", "how can you help". It accepts "u" for "you", and a word stem (`abilit…`, `capabilit…`) so a typo like "abilitiles" still matches. The whole message must still be such a question, so "what can you tell me about Falcon?" still needs a citation.
+  - The system prompt lists what the assistant can do (answer from this workspace's documents with sources, save tasks, list tasks, post a summary to Discord).
+  - New prompt rule: questions about the workspace's tasks ("what's pending", "when do I need to …") call `list_tasks` instead of answering from memory or refusing.
+- **Why:** In the user's test, "what abilitiles do u have ?" and a "when do i need to …" task question (asked right after "get my tasks") both got the fixed "I don't know".
+  - The first didn't match the small-talk regex, so the citation guard replaced the answer.
+  - For the second, the prompt only allows facts from `<documents>`, and the guard blocks uncited answers when no tool ran. Answering from chat history was rejected: history holds user text and old model wording, so a user could plant a "fact" and get it repeated without a source. Calling `list_tasks` again gives fresh, logged data, and the guard already accepts turns that called a tool.
+
+## 2026-11-18 06:43 IST: The "what can you do" list is built from the tool registry
+- **Files:** `server/src/services/tools.ts`, `server/src/services/prompt.ts`, `server/src/services/chat.ts`, `server/test/tools.test.ts`, `CLAUDE.md`
+- **What:**
+  - Each tool in the registry has a short `ability` line ("save tasks, with an optional due date").
+  - `buildSystemPrompt(today, abilities)` lists document Q&A plus every tool's ability. `chat.ts` passes `toolAbilities` from the registry.
+  - A test checks that every tool has an ability and that each one appears in the prompt.
+  - New CLAUDE.md rule: a new or changed tool sets its `ability`. A new feature that isn't a tool is added to the fixed part of the list in `prompt.ts`.
+- **Why:** The user asked that the abilities answer stays up to date whenever functionality is added or changed. The 06:41 change wrote the list by hand in the prompt, so a new tool could be missing from it. Built from the registry, the same list that declares the tools describes them.
+
+## 2026-11-18 06:49 IST: Record the Discord posting problems found in the user's manual test
+- **Files:** `docs/plans/part-4-tool-loop.md`
+- **What:** Added a "User's manual test (06:35–06:48)" section to the Part 4 results. It lists the four Discord posts and the refused capability question, with what was asked, what was posted and why. Facts were taken from the `messages`, `tool_calls` and `chunks` tables. No code changed. The fix is proposed, waiting for the user's decision.
+- **Why:** The user asked for this event to be recorded. Three of the four posts should not have gone out: invented text, a "not found" non-answer, and a question treated as a command. The fourth was true but showed no source.
+
+## 2026-11-18 06:58 IST: Record the second round of Discord posts (06:48–06:56), including "NONE FOUND" and abusive text
+- **Files:** `docs/plans/part-4-tool-loop.md`
+- **What:** Extended the incident section with 10 more posts from `tool_calls`:
+  - The literal prompt marker "NONE FOUND".
+  - Two more question-style or history-copied posts.
+  - Five sexually explicit or harassing messages about a named person, dictated in the user's test. They were posted unfiltered, and Gemini didn't refuse.
+  - The abusive text is described, not copied. No code changed.
+- **Why:** The user pointed out that a "NONE FOUND" message was also posted. The query for it found the rest. The abusive posts show the proposed fix ("allow text the user dictated") isn't enough on its own: outbound posts also need a content check.
+
+## 2026-11-18 07:03 IST: Discord posts need a source, unsafe content is blocked, fixed replies for "can't do" and "what to post"
+- **Files:** `server/src/services/tools.ts`, `server/src/services/citations.ts`, `server/src/services/prompt.ts`, `server/src/services/llm.ts`, `server/src/services/chat.ts`, `server/test/tools.test.ts`, `server/test/citations.test.ts`, `docs/DESIGN.md`, `docs/plans/part-4-tool-loop.md`
+- **What:**
+  1. **Discord source check (code).** `send_discord_summary` refuses text unless it cites `[cN]` chunks from this answer's prompt, or every word of it is in the user's current message (dictated). The tool context gets the turn's chunk labels and the user message from the server.
+  2. **Safety settings.** Every Gemini call blocks harassment, hate and sexually explicit content at LOW and above, and dangerous content at MEDIUM and above. A blocked reply becomes a `done` answer with a fixed "I can't help with that." It isn't a `failed` answer, because Retry wouldn't help. Blocked turns are left out of later history, so one bad message doesn't block the rest of the chat.
+  3. **Fixed replies the guard accepts.** "I can't do that." (for actions no tool can do, like scheduling or reading Discord, and for content it won't post); the server replaces it with that text plus the abilities list. "What should I post to Discord? …" (a post request with no content, or "can you send a Discord message?"). The model can't add facts to either: the guard swaps in the fixed text.
+  4. **Prompt.** Discord summaries put the `[cN]` labels inside the summary (removed before posting). Post only the user's exact words or a cited summary. "Not found" is never posted. Questions aren't commands. No insults, sexual content or claims about people.
+  5. **Small talk.** Matched on letters only, after an optional greeting, so "hi , who are yo u" counts. The `abilit…`/`capabilit…` stems are capped at 6 extra letters.
+- **Why:** The user's manual tests (06:35–06:56) got invented, "not found", "NONE FOUND", history-copied and abusive posts through to Discord, because "a tool was called" skipped the citation guard. "hi , who are yo u" and "can u schedule a discord message after 1 min" got the document refusal instead of an answer about the assistant. Scheduling itself isn't built: it's a new feature, so the assistant now says it can't do it.
+
+## 2026-11-18 07:04 IST: ChatGPT-style chat list and conversation layout (Primer theme kept)
+- **Files:** `server/src/controllers/chat.controller.ts`, `client/src/types.ts`, `client/src/components/ChatPanel.tsx`, `client/src/components/ChatMessage.tsx`, `client/src/index.css`, `docs/DESIGN.md`
+- **What:**
+  1. `GET /chats` returns `last_message_at` (the newest message's time, from an embedded `messages` select limited to 1) and sorts by it, so a chat you continue moves to the top. No schema change.
+  2. Chat list grouped under "Today", "Yesterday", "Previous 7 days", "Previous 30 days" and "Older" by last activity. Sending a message moves that chat to the top straight away. Full title shows on hover.
+  3. Conversation and composer sit in a centered column (max 768px). A header shows the open chat's title.
+  4. Composer is one rounded box with the send button inside that grows with the text (up to about 8 lines), plus a hint line under it.
+  5. Copy button under each finished assistant answer (copies the text without `[cN]` markers).
+- **Why:** The user asked to borrow the good parts of ChatGPT's chat history and layout while keeping our theme. Delete chat, rename, pin and search were left out (rename is out of scope; delete needs a yes).
+
+## 2026-11-18 07:07 IST: Clearer, red warning in the delete-workspace dialog
+- **Files:** `client/src/components/DeleteWorkspaceDialog.tsx`, `client/src/index.css`
+- **What:** The warning box is now red (`flash-error`, matching the dialog's red title) instead of yellow. It leads with a bold "This can't be undone.", names the workspace in bold and lists what is deleted as bullets (documents, chats, tasks, tool-call log). The name to type in the confirm label is shown bold in monospace, like GitHub's delete-repository dialog.
+- **Why:** The user found the single grey sentence on a yellow box easy to skim past for a destructive action (screenshot 07:07).
+
+## 2026-11-18 07:08 IST: Skeleton rows in the chat list while it loads
+- **Files:** `client/src/components/ChatPanel.tsx`, `client/src/index.css`
+- **What:** `ChatPanel` tracks `loadingChats`. While the list is loading, the sidebar shows a placeholder section label and six grey rows of varying width with a soft pulse (still under `prefers-reduced-motion`). "No chats yet" now appears only after the list has loaded, instead of flashing first.
+- **Why:** The user asked for a skeleton or a browser cache for the chat list. A skeleton was chosen: caching chat titles in localStorage would leave a user's question text in the browser after sign-out (shared computers), could show chats that were deleted elsewhere, and needs invalidation code. The list call is a single fast query, so a skeleton covers the wait.
+
+## 2026-11-18 07:10 IST: No empty-state flash when a workspace's chat opens; message skeleton instead of a spinner
+- **Files:** `client/src/components/ChatPanel.tsx`, `client/src/index.css`
+- **What:**
+  - `loadingMessages` starts `true`, so the first render shows the loading state, not "Ask about this workspace's documents". It turns false once the list is in and either there are no chats or the newest chat's messages have loaded.
+  - The loading state is a skeleton shaped like a conversation (two right-aligned question bubbles, each followed by lines of answer), used both on first load and when switching chats.
+  - The chat header shows a grey bar instead of "New chat" while the list loads.
+- **Why:** The user saw empty message → spinner → chats (or back to the empty message) on every load. The empty state appeared first because `loadingMessages` started `false` while the chat list was still loading.
+
+## 2026-11-18 07:11 IST: Skeleton rows in the documents panel while it loads
+- **Files:** `client/src/components/DocumentsPanel.tsx`, `client/src/index.css`
+- **What:** The spinner is replaced by three placeholder rows shaped like document rows (icon, filename line, meta line, status pill), using the shared `.skeleton` style. The document counter is hidden until the list has loaded, instead of showing 0.
+- **Why:** The user asked whether documents should get a skeleton like the chat list. It keeps loading states consistent, and rows of the real height stop the panel from jumping when the list arrives.
+
+## 2026-11-18 07:20 IST: Copy button shows on hover (always on the latest answer); account menu no longer breaks the email mid-word
+- **Files:** `client/src/components/ChatMessage.tsx`, `client/src/components/ChatPanel.tsx`, `client/src/components/UserMenu.tsx`, `client/src/index.css`
+- **What:**
+  - Copy button under an answer is hidden until the answer is hovered or the button gets keyboard focus, like ChatGPT. The latest answer always shows it. Touch screens (no hover) always show it.
+  - Account menu: the email stays on one line (cut with "…" past 260px, full address on hover) instead of wrapping at any character ("bkushwaha.dev@gmai / l.com").
+- **Why:** The user found a copy icon under every answer noisy (screenshot 07:17) and suggested moving it or adding a toggle in the profile menu. Hover reveal keeps the button where people expect it without adding a setting. The email wrapped mid-word because `.menu-header` had `overflow-wrap: anywhere` inside a popover that shrinks to its narrowest content.
+
+## 2026-11-18 07:21 IST: Account menu header becomes an account card (avatar, name, email)
+- **Files:** `client/src/components/UserMenu.tsx`, `client/src/index.css`
+- **What:** The "Signed in as <email>" text is replaced by a card: a 40px avatar (Google picture or initial), the name from the Google profile (`full_name`/`name`, if any) in bold and the email below it in muted text, each on one line with "…" and a hover title. Without a name the email is the bold line. The avatar markup is shared by the header button and the card.
+- **Why:** The user said the menu still didn't look good after the 07:19 email fix (screenshot 07:21).
+
+## 2026-11-18 07:27 IST: Message box gets focus on New chat / opening a chat, and typing anywhere goes into it
+- **Files:** `client/src/components/ChatPanel.tsx`
+- **What:**
+  - "New chat", opening a chat from the list and the first load put the cursor in the message box (skipped on touch screens, where focusing pops up the keyboard).
+  - Typing a printable character while focus is on nothing editable (no input, textarea, select or open dialog, no Ctrl/Cmd/Alt) moves focus to the message box, and that first character lands in it, like ChatGPT.
+- **Why:** The user asked for the input to be focused when starting a new chat, or when they start typing.
+
+## 2026-11-18 07:33 IST: "Thinking…" stops as soon as a send fails
+- **Files:** `client/src/components/ChatPanel.tsx`
+- **What:** When sending fails, the "Thinking…" placeholder is removed right away, together with the error toast. Before, it stayed until the follow-up fetch of the chat's messages finished. While the server is down that fetch retries for 3s + 5s.
+- **Why:** ⚠ AI mistake (Part 3 send flow). The user's screenshot (07:32) showed the "Couldn't send: Can't reach the server" toast while "Thinking…" was still spinning. The DB showed the server had saved the question and then gone down (dev restart) before it created the answer row.
+
+## 2026-11-18 07:38 IST: save_task keeps the time the user gave (prompt-only, no schema change)
+- **Files:** `server/src/services/prompt.ts`, `server/src/services/tools.ts`, `server/src/services/chat.ts`, `server/test/tools.test.ts`, `docs/DESIGN.md`, `docs/plans/part-4-tool-loop.md`
+- **What:**
+  - The prompt now gives the model the current time as well as the date ("It is now Wednesday, 2026-11-18, 07:38 (Asia/Kolkata)"). `describeToday` is renamed `describeNow`.
+  - New rule plus save_task argument descriptions: there's no time field, so a time the user gives ("in 3 min", "after 2 hours", "at 9pm") is turned into a clock time and kept at the end of the title ("Drink water at 07:44"), and due_date is set to the day it falls on. The reply must repeat the saved title and due date.
+- **Why:** ⚠ AI mistake (Part 4 prompt/tool design). Another session pointed it out from the user's chat, and a live check against Gemini confirmed it (same 4 inputs plus 3 controls, current prompt):
+  - "created a task after 5 min to drink water" saved as "Drink water": the time was **dropped silently**, but the reply still said the task was saved.
+  - "… after 2 min", "charge after 10 min", "… in 3 min" kept the time in the title, but as relative words that are meaningless when read later, and with **no due_date**. list_tasks then shows "(created …)" instead of a due date.
+  - The model couldn't do better: the prompt only gave today's date, never the current time.
+  - The user picked the prompt-only fix over adding a `tasks.due_time` column, to stay inside the brief's "optional due date".
+- **Testing (live Gemini, tool calls faked, no DB):** a script in the session scratchpad ran 9 phrasings: relative times, "at 9pm", "tomorrow", no time, "reminder" / "remind me". It ran at the real time and again with the clock set to 23:50 IST. After the fix every time was kept and every timed task got a due_date; "tomorrow" and "buy milk" (no time) were unchanged. Unit tests: 85 pass, including a new midnight case for `describeNow`.
+- **Other things the testing found:**
+  - The first wording produced "… in 07:42" and "stretch after 2 min at 07:42" (relative words kept next to the clock time). The rule now says to *replace* the time words with "at HH:MM". This final wording was **not** re-run live (see quota below).
+  - At 23:50, "charge after 10 min" became "at 00:00" with due_date still 2026-11-18 (should be 11-19). The model does the clock arithmetic, so a time just past midnight can get the wrong date. The rule now spells out "the next day if it passes midnight". Listed as a known limit in DESIGN.md.
+  - Gemini's safety filter blocked one request that used a bodily-function example ("Blocked by the safety filter (SAFETY)"), which the user would see as "I can't help with that." That example was also removed from the repo at the user's request (prompt example, and this log's quotes of it).
+  - Fallback model `gemini-3.6-flash` hit its free-tier limit of 20 requests a day (429, retry in ~5h48m) and once returned 504 DEADLINE_EXCEEDED. While the primary is unavailable, answers will fail with Retry until the quota resets.
+
+## 2026-11-18 07:46 IST: Tool descriptions cover more ways of asking (reminders, to-do lists, "all my tasks")
+- **Files:** `server/src/services/tools.ts`, `server/src/services/prompt.ts`
+- **What:**
+  - `save_task`: the description names a reminder as a task and lists common phrasings ("remind me to…", "set a reminder", "add … to my to-do list", "don't let me forget…"). It says one call per task, and that no alert is sent at the due time, so the reply mustn't promise one.
+  - `list_tasks`: lists common task questions ("what's pending", "what's due today", "did I save…"). The `limit` description says to use 50 when the user asks for all tasks (the default is 10).
+  - `send_discord_summary`: says to post right away, only on a clear request, and that it can't schedule a post for later.
+  - Ability line: "save tasks and reminders, with an optional due date and time". The prompt's "can't do" example becomes "scheduling a Discord post for later", so a "reminder" isn't mistaken for it. The "remind me" sentence moved from the prompt into the tool description.
+- **Why:** The user asked to broaden the tool wording so more phrasings work first time. Seen earlier today: "created a reminder after 5 min to drink water" got "I can't do that" (screenshot 07:32), and "list all my task" was capped at the default 10.
+- **Testing (live Gemini, tool calls faked, nothing saved or posted):** 8 phrasings. Reminders after 5 min and on Friday, "don't let me forget X and Y tomorrow" (two save_task calls, one per task), "add stretch to my to-do list", "list all my tasks" (limit 50), "what is due today?" and "post … at 6pm" ("I can't do that.") all behaved as intended.
+  - ⚠ AI mistake found by that test: my first Discord wording ("Not for questions about Discord ('can you post?')") made "can you post to discord?" get a free-text "Yes, I can…" instead of the fixed "What should I post…" reply. It competed with the prompt rule that already handles this, so I removed it. Re-run: "can you post to discord?" → the fixed reply, "post … at 6pm" → "I can't do that.", "post hello team to discord" → posted (faked).
+  - Unit tests: 85 pass.

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { applyCitationGuard, isSmallTalk } from '../src/services/citations';
-import { REFUSAL, renderDocuments, stripCitationLabels } from '../src/services/prompt';
+import { ASK_WHAT_TO_POST, CANT_DO, REFUSAL, renderDocuments, stripCitationLabels } from '../src/services/prompt';
 import type { RetrievedChunk } from '../src/services/retrieve';
 
 function chunk(label: string, overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
@@ -18,6 +18,7 @@ function chunk(label: string, overrides: Partial<RetrievedChunk> = {}): Retrieve
 }
 
 const question = 'What is the Project Falcon code?';
+const ABILITIES = ['answer questions from documents', 'save tasks'];
 
 describe('applyCitationGuard', () => {
   test('keeps a cited answer and maps the label to its chunk', () => {
@@ -26,6 +27,7 @@ describe('applyCitationGuard', () => {
       chunks: [chunk('c1')],
       userMessage: question,
       toolCalled: false,
+      abilities: ABILITIES,
     });
     assert.equal(result.text, 'The Project Falcon code is 7731 [c1].');
     assert.deepEqual(result.citations, [
@@ -46,6 +48,7 @@ describe('applyCitationGuard', () => {
       chunks: [chunk('c1')],
       userMessage: question,
       toolCalled: false,
+      abilities: ABILITIES,
     });
     assert.equal(result.text, 'It is 7731 [c1]. It launches in Q3.');
     assert.deepEqual(
@@ -60,6 +63,7 @@ describe('applyCitationGuard', () => {
       chunks: [chunk('c1')],
       userMessage: 'What is the capital of France?',
       toolCalled: false,
+      abilities: ABILITIES,
     });
     assert.equal(result.text, REFUSAL);
     assert.deepEqual(result.citations, []);
@@ -71,6 +75,7 @@ describe('applyCitationGuard', () => {
       chunks: [],
       userMessage: 'What is the capital of France?',
       toolCalled: false,
+      abilities: ABILITIES,
     });
     assert.equal(result.text, REFUSAL);
   });
@@ -81,6 +86,7 @@ describe('applyCitationGuard', () => {
       chunks: [],
       userMessage: 'hello!',
       toolCalled: false,
+      abilities: ABILITIES,
     });
     assert.equal(result.text, 'Hello! Ask me anything about this workspace.');
   });
@@ -91,6 +97,7 @@ describe('applyCitationGuard', () => {
       chunks: [],
       userMessage: 'Save a task: call the vendor Friday',
       toolCalled: true,
+      abilities: ABILITIES,
     });
     assert.equal(result.text, 'Saved the task "call the vendor" for Friday.');
   });
@@ -101,6 +108,7 @@ describe('applyCitationGuard', () => {
       chunks: [chunk('c1'), chunk('c2', { chunk_id: 'id-c2' })],
       userMessage: question,
       toolCalled: false,
+      abilities: ABILITIES,
     });
     assert.deepEqual(
       result.citations.map((c) => c.label),
@@ -109,11 +117,73 @@ describe('applyCitationGuard', () => {
   });
 });
 
+describe('fixed replies', () => {
+  test('"I can\'t do that." becomes the fixed text plus the abilities list, dropping anything the model added', () => {
+    const result = applyCitationGuard({
+      answer: "I can’t do that. By the way, Paris is the capital of France.",
+      chunks: [],
+      userMessage: 'can u schedule a discord message after 1 min',
+      toolCalled: false,
+      abilities: ABILITIES,
+    });
+    assert.equal(result.text, `${CANT_DO} Here's what I can do:\n- answer questions from documents\n- save tasks`);
+    assert.deepEqual(result.citations, []);
+  });
+
+  test('"What should I post to Discord?" passes as the fixed text', () => {
+    const result = applyCitationGuard({
+      answer: `${ASK_WHAT_TO_POST} Also, the code is 7731.`,
+      chunks: [],
+      userMessage: 'can u send discord message',
+      toolCalled: false,
+      abilities: ABILITIES,
+    });
+    assert.equal(result.text, ASK_WHAT_TO_POST);
+  });
+
+  test('a cited answer that happens to start like a fixed reply is kept as written', () => {
+    const result = applyCitationGuard({
+      answer: "I can't do that part, but the code is 7731 [c1].",
+      chunks: [chunk('c1')],
+      userMessage: question,
+      toolCalled: false,
+      abilities: ABILITIES,
+    });
+    assert.equal(result.text, "I can't do that part, but the code is 7731 [c1].");
+  });
+});
+
 describe('isSmallTalk', () => {
-  for (const msg of ['hi', 'Hello there!', 'thanks so much', 'Thank you.', 'who are you?', 'What can you do', 'bye']) {
+  for (const msg of [
+    'hi',
+    'Hello there!',
+    'thanks so much',
+    'Thank you.',
+    'who are you?',
+    'What can you do',
+    'bye',
+    'what abilitiles do u have ?',
+    'What capabilities does this chat have?',
+    'what are your features',
+    'what can the model do',
+    'how can u help me',
+    'hi , who are yo u',
+    'Hey! What can you do?',
+    'hello there',
+  ]) {
     test(`"${msg}" is small talk`, () => assert.equal(isSmallTalk(msg), true));
   }
-  for (const msg of ['hi, what is the Falcon code?', 'What is the capital of France?', 'thanks, now summarise the doc']) {
+  for (const msg of [
+    'hi, what is the Falcon code?',
+    'What is the capital of France?',
+    'thanks, now summarise the doc',
+    'what can you tell me about Falcon?',
+    'what tools do you have for the Falcon launch?',
+    'hi, who is the Falcon owner?',
+    'what ability of the Falcon team do you have',
+    'history of Falcon',
+    '???',
+  ]) {
     test(`"${msg}" is not small talk`, () => assert.equal(isSmallTalk(msg), false));
   }
 });
@@ -134,5 +204,38 @@ describe('prompt helpers', () => {
 
   test('old citation labels are removed from history', () => {
     assert.equal(stripCitationLabels('The code is 7731 [c1][c2]. Launch is Q3 [c3, c4].'), 'The code is 7731. Launch is Q3.');
+  });
+});
+
+describe('citations from tool arguments', () => {
+  test('labels used in a tool argument become sources; the reply text is unchanged', () => {
+    const result = applyCitationGuard({
+      answer: 'I posted the summary to Discord.',
+      chunks: [chunk('c1'), chunk('c2', { chunk_id: 'id-c2' })],
+      userMessage: 'Summarise Falcon and send it to Discord',
+      toolCalled: true,
+      abilities: ABILITIES,
+      toolText: JSON.stringify({ summary: 'Falcon is a gateway [c2]. Code 7731 [c1, c9].' }),
+    });
+    assert.equal(result.text, 'I posted the summary to Discord.');
+    assert.deepEqual(
+      result.citations.map((c) => c.label),
+      ['c2', 'c1'],
+    );
+  });
+
+  test('labels in the reply come first, without duplicates', () => {
+    const result = applyCitationGuard({
+      answer: 'Falcon launches in Q3 [c2].',
+      chunks: [chunk('c1'), chunk('c2')],
+      userMessage: 'Summarise Falcon and send it to Discord',
+      toolCalled: true,
+      abilities: ABILITIES,
+      toolText: '{"summary":"[c1][c2]"}',
+    });
+    assert.deepEqual(
+      result.citations.map((c) => c.label),
+      ['c2', 'c1'],
+    );
   });
 });

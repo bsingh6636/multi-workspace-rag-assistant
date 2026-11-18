@@ -41,15 +41,23 @@ export default function DeleteWorkspaceDialog({ workspace, onConfirm, onClose }:
               {error}
             </p>
           )}
-          <p className="flash flash-warn">
+          {/* Red, not yellow: this is the one action in the app that can't be reversed. */}
+          <div className="flash flash-error delete-warning">
             <AlertIcon />
-            <span>
-              This permanently deletes the workspace with all its documents, chats, tasks and tool-call history. It
-              can't be undone.
-            </span>
-          </p>
+            <div>
+              <p className="delete-warning-title">This can't be undone.</p>
+              <p>
+                Deleting <strong>{workspace.name}</strong> permanently removes everything in it:
+              </p>
+              <ul>
+                <li>All documents and their search index</li>
+                <li>All chats and messages</li>
+                <li>All tasks and the tool-call log</li>
+              </ul>
+            </div>
+          </div>
           <label className="form-label" htmlFor="confirm-name">
-            To confirm, type “{workspace.name}” below
+            To confirm, type <code className="confirm-name">{workspace.name}</code> below
           </label>
           <input
             id="confirm-name"

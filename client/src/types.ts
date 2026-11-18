@@ -35,6 +35,8 @@ export type Chat = {
   /** First ~60 characters of the first question; null until a message is sent. */
   title: string | null
   created_at: string
+  /** Time of the newest message (created_at if none yet). The list is sorted and grouped by it. */
+  last_message_at: string
 }
 
 /** One source of an answer. `label` matches the [c1] markers in the answer text. */
@@ -48,6 +50,15 @@ export type Citation = {
 }
 
 /** GET /api/workspaces/:wsId/chats/:chatId/messages */
+// A tool call an answer made, shown under it in the chat. `error` says why it failed.
+export type ToolCallSummary = {
+  tool_name: string
+  status: 'success' | 'invalid_args' | 'unknown_tool' | 'error'
+  error: string | null
+  args: unknown
+  created_at: string
+}
+
 export type Message = {
   id: string
   chat_id: string
@@ -57,6 +68,7 @@ export type Message = {
   status: 'pending' | 'done' | 'failed'
   error: string | null
   created_at: string
+  tool_calls?: ToolCallSummary[] // assistant messages only
 }
 
 /** POST /api/workspaces/:wsId/chats/:chatId/messages */

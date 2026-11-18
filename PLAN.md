@@ -53,16 +53,16 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 **Done when:** the Falcon fact in A is answered with a citation, asking for it in B gets "I don't know", and a general-knowledge question ("What is the capital of France?") also gets "I don't know".
 
 ## Part 4: Tool loop (~2h)
-- [ ] `services/tools.ts`: a registry (allowlist) with a zod schema, Gemini declaration and executor for each tool
-  - [ ] `save_task({ title, due_date? })` inserts into `tasks` (the side effect)
-  - [ ] `list_tasks({ limit? })` is read-only
-  - [ ] `send_discord_summary({ summary })` POSTs to the webhook (URL from env, never logged)
-- [ ] Loop of up to `MAX_TOOL_ITERATIONS` (3): text → done. Tool call → unknown? / invalid args? / execute → log → append result → continue
-- [ ] `workspace_id`, `chat_id` and `message_id` are injected by the server into the executors
-- [ ] Every attempt is logged in `tool_calls` with a status from `success|invalid_args|unknown_tool|error` and its latency
-- [ ] Routes: `GET /api/workspaces/:wsId/tool-calls`, `GET /api/workspaces/:wsId/tasks`
+- [x] `services/tools.ts`: a registry (allowlist) with a zod schema, Gemini declaration and executor for each tool
+  - [x] `save_task({ title, due_date? })` inserts into `tasks` (the side effect)
+  - [x] `list_tasks({ limit? })` is read-only
+  - [x] `send_discord_summary({ summary })` POSTs to the webhook (URL from env, never logged)
+- [x] Loop of up to `MAX_TOOL_ITERATIONS` (3): text → done. Tool call → unknown? / invalid args? / execute → log → append result → continue
+- [x] `workspace_id`, `chat_id` and `message_id` are injected by the server into the executors
+- [x] Every attempt is logged in `tool_calls` with a status from `success|invalid_args|unknown_tool|error` and its latency
+- [x] Routes: `GET /api/workspaces/:wsId/tool-calls`, `GET /api/workspaces/:wsId/tasks`
 
-- [ ] The citation guard skips the refusal when a tool was called in this turn
+- [x] The citation guard skips the refusal when a tool was called in this turn
 
 **Done when:** "create a task to X" adds a task row and a log row. A **tool-only request with no matching docs** ("save a task: call the vendor Friday" in workspace B) still reaches the LLM and creates the task. An invalid or unknown call is logged without crashing, and a multi-step call (save, then Discord) works.
 

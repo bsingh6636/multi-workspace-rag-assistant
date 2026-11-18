@@ -60,7 +60,22 @@ export type MessageRow = {
   tokens_out: number | null;
   latency_ms: number | null;
   created_at: string;
+  tool_calls?: MessageToolCall[]; // embedded when read with MESSAGE_COLUMNS
 };
+
+/** A tool call shown under its answer in the chat (the full row is in tool_calls). */
+export type MessageToolCall = {
+  tool_name: string;
+  status: 'success' | 'invalid_args' | 'unknown_tool' | 'error';
+  error: string | null; // why it failed; null on success
+  args: unknown;
+  created_at: string;
+};
+
+// A message plus the tool calls its answer made, joined through
+// tool_calls.message_id. Order them with orderToolCalls().
+export const MESSAGE_COLUMNS = '*, tool_calls(tool_name, status, error, args, created_at)';
+export const orderToolCalls = ['created_at', { referencedTable: 'tool_calls', ascending: true }] as const;
 
 // Postgres error code for a UNIQUE constraint violation.
 export const UNIQUE_VIOLATION = '23505';

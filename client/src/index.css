@@ -317,6 +317,31 @@ button {
   border-color: var(--warn-border);
 }
 
+/* Delete-workspace dialog: a bold headline, then what gets removed. */
+.delete-warning p {
+  margin: 0;
+}
+
+.delete-warning .delete-warning-title {
+  margin-bottom: 4px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.delete-warning ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+
+/* The name to type, shown like GitHub's delete-repository dialog. */
+.confirm-name {
+  padding: 1px 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  background: var(--hover);
+  border-radius: 6px;
+}
+
 .flash-info {
   background: var(--info-bg);
   border-color: var(--info-border);
@@ -462,16 +487,40 @@ button {
   color: var(--fg-muted);
 }
 
-.menu-header {
-  max-width: 260px;
-  padding: 4px 16px 8px;
-  color: var(--fg-muted);
-  overflow-wrap: anywhere;
+.menu-account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 220px;
+  max-width: 300px;
+  padding: 8px 16px 12px;
 }
 
-.menu-header strong {
-  display: block;
-  color: var(--fg);
+.avatar-lg {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  font-size: 16px;
+}
+
+/* Name and email each stay on one line; a long one is cut with "…" and
+   shown in full on hover (title). */
+.menu-account-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.menu-account-text strong,
+.menu-account-text span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-account-text span {
+  font-size: 12px;
+  color: var(--fg-muted);
 }
 
 .menu-empty {
@@ -976,7 +1025,9 @@ button {
 
 .chat {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  /* minmax(0, …): a plain 1fr can't shrink below its content, so one long
+     chat title would widen the whole chat on a phone. */
+  grid-template-columns: 240px minmax(0, 1fr);
   flex: 1; /* fill the rest of the window (see .app-fit) */
   min-height: 360px; /* very short windows scroll the page instead of crushing the chat */
   overflow: hidden;
@@ -997,10 +1048,26 @@ button {
 }
 
 .chat-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.chat-group ul {
   margin: 0;
   padding: 0;
-  overflow-y: auto;
   list-style: none;
+}
+
+/* "Today", "Yesterday", … above each run of chats. */
+.chat-group-label {
+  margin: 16px 8px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.chat-group:first-child .chat-group-label {
+  margin-top: 4px;
 }
 
 .chat-list-item {
@@ -1033,7 +1100,97 @@ button {
   cursor: default;
 }
 
+/* Loading placeholders for the chat list. */
+.skeleton {
+  background: var(--hover);
+  border-radius: 6px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.chat-skeleton-label {
+  width: 40%;
+  height: 10px;
+  margin: 8px 8px 10px;
+}
+
+.chat-skeleton-row {
+  height: 14px;
+  margin: 0 8px 16px;
+}
+
+.chat-title-skeleton {
+  width: 160px;
+  height: 14px;
+  margin: 3px 0; /* same height as the 14px title line */
+}
+
+/* Loading placeholder for the conversation. */
+.msg-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.msg-skeleton-question {
+  align-self: flex-end;
+  height: 36px;
+  border-radius: 12px 12px 4px 12px; /* same shape as .msg-bubble */
+}
+
+.msg-skeleton-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.msg-skeleton-answer .skeleton {
+  height: 14px;
+}
+
+/* Loading placeholder rows for the documents panel. */
+.doc-skeleton-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.doc-skeleton-text {
+  gap: 6px;
+}
+
+.doc-skeleton-name {
+  height: 14px;
+}
+
+.doc-skeleton-meta {
+  width: 120px;
+  height: 10px;
+}
+
+.doc-skeleton-status {
+  flex-shrink: 0;
+  width: 56px;
+  height: 20px;
+  border-radius: 2em;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* The global reduced-motion rule shortens animations to 0.01ms, which would
+   make an infinite pulse flicker. Turn it off instead. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
 .chat-list-empty {
+  margin: 0;
   padding: 6px 8px;
   font-size: 14px;
 }
@@ -1045,30 +1202,89 @@ button {
   min-height: 0;
 }
 
+/* The open chat's title. */
+.chat-header {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Messages and composer share one centered reading column, like ChatGPT. */
+.chat-column {
+  width: 100%;
+  max-width: 768px;
+  margin-inline: auto;
+}
+
 .chat-messages {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 16px;
   padding: 16px;
   overflow-y: auto;
 }
 
+.chat-thread {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .chat-composer {
+  padding: 0 16px 8px;
+}
+
+/* One rounded box holding the message box and the send button. */
+.chat-input {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border);
+  padding: 8px 8px 8px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  transition: border-color 80ms ease, box-shadow 80ms ease;
 }
 
-.chat-composer textarea {
+.chat-input:focus-within {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.chat-input textarea {
   flex: 1;
-  height: auto; /* .form-control fixes inputs at 32px */
-  padding: 8px 12px;
-  resize: none;
+  min-width: 0;
+  padding: 6px 0;
   font: inherit;
   font-size: 14px;
+  line-height: 20px;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  outline: none; /* the box's focus ring shows focus */
+  resize: none;
+  overflow-y: auto; /* past the max height set in ChatPanel */
+}
+
+.chat-send {
+  flex-shrink: 0;
+  border-radius: 10px;
+}
+
+.chat-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  text-align: center;
 }
 
 .msg {
@@ -1105,6 +1321,35 @@ button {
   max-width: 90%;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* Small icon buttons under an answer (Copy). Hidden until the answer is
+   hovered or a button is focused, like ChatGPT; the latest answer always
+   shows them. opacity (not display) keeps the row's height, so nothing jumps. */
+.msg-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: -6px; /* line the icon up with the answer text */
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.msg-assistant:hover .msg-actions,
+.msg-actions:focus-within,
+.msg-latest .msg-actions {
+  opacity: 1;
+}
+
+/* Touch screens can't hover: always show them. */
+@media (hover: none) {
+  .msg-actions {
+    opacity: 1;
+  }
+}
+
+.btn-octicon-sm {
+  width: 28px;
+  height: 28px;
 }
 
 .msg-sources {
@@ -1186,7 +1431,7 @@ button {
 
 @media (max-width: 700px) {
   .chat {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto 1fr;
     height: auto;
   }
@@ -1200,4 +1445,29 @@ button {
   .chat-messages {
     min-height: 360px;
   }
+}
+
+/* Tool calls under an answer: one small line each. */
+.msg-tools {
+  max-width: 90%;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.msg-tool svg {
+  margin-right: 4px;
+  vertical-align: text-bottom;
+  color: var(--success);
+}
+
+.msg-tool-failed svg {
+  color: var(--danger);
+}
+
+.msg-tool-reason {
+  white-space: pre-wrap; /* keep the space before "·" */
 }

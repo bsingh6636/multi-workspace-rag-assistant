@@ -14,12 +14,16 @@ const envSchema = z.object({
   // One upload may use at most 95% of it (services/uploadLimit.ts).
   GEMINI_EMBED_RPM: z.coerce.number().int().positive().default(100),
   GEMINI_EMBED_TPM: z.coerce.number().int().positive().default(30_000),
-  GEMINI_CHAT_MODEL: z.string().min(1).default('gemini-3.6-flash'),
+  GEMINI_CHAT_MODEL: z.string().min(1).default('gemini-3.5-flash-lite'),
   // Used after retries on the primary fail with 429/5xx/timeout (DESIGN §6).
-  GEMINI_CHAT_FALLBACK_MODEL: z.string().min(1).default('gemini-3.5-flash-lite'),
+  GEMINI_CHAT_FALLBACK_MODEL: z.string().min(1).default('gemini-3.6-flash'),
   // Chunks scoring below this are left out of the prompt. It filters chunks;
   // it never decides whether the LLM is called (hard rule 7).
   SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.62),
+  // Rounds of tool calls per answer before the model must reply in text (DESIGN §5).
+  MAX_TOOL_ITERATIONS: z.coerce.number().int().min(1).max(5).default(3),
+  // Optional: only the send_discord_summary tool needs it. Empty = not configured.
+  DISCORD_WEBHOOK_URL: z.preprocess((v) => (v === '' ? undefined : v), z.url().optional()),
 });
 
 const parsed = envSchema.safeParse(process.env);

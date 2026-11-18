@@ -149,6 +149,8 @@ POST /api/workspaces/:wsId/chats/:chatId/messages  { content }
   on error: assistant.status = failed, error = msg → return 200 with failed message (client shows Retry)
 ```
 
+**Chat list** (`GET /api/workspaces/:wsId/chats`): each chat comes with `last_message_at`, the newest message's time (an embedded `messages` select limited to one row, with no extra column). The list is sorted by it, so a chat you continue moves to the top, as in ChatGPT. The client groups it under "Today", "Yesterday", "Previous 7 days", "Previous 30 days" and "Older", and moves a chat to the top as soon as you send in it.
+
 ### Why the threshold is a filter, not a gate
 
 The first version returned "I don't know" **without calling the LLM** when no chunk passed the threshold. That silently blocked every tool-only request. "Save a task: call the vendor tomorrow" matches no document text, so it never reached the model. Now the threshold only decides which chunks enter the prompt, and the model handles every case:
@@ -189,43 +191,63 @@ When nothing passes the threshold: `<documents>NONE FOUND</documents>`.
 With the LLM always called, refusal can't rely on the prompt alone. `services/citations.ts`:
 
 1. Find every `[cN]` in the answer. Labels that aren't in the label map were invented, so strip them from the text.
-2. `citations` = the valid labels mapped to `{chunk_id, document_id, filename, section, similarity}`.
-3. If there are **no valid citations**, **no tool was called this turn**, and the user message is **not small talk**, replace the answer with the fixed refusal `"I don't know — this workspace's documents don't cover that."`
-   - Small talk is a simple regex on the user message (greetings, thanks, "who are you", "what can you do"). Everything else that's substantive is treated as needing a citation.
+2. `citations` = the valid labels mapped to `{chunk_id, document_id, filename, section, similarity}`, in first-use order. Valid labels the model put in **tool arguments** this turn count too: a Discord summary written from `[c1][c2]` makes those chunks sources, even when the reply only says "Posted it". (Found in Part 4 testing: the model cited inside the summary, not in its reply.)
+3. **Fixed replies.** With no valid citations, an answer that starts with "I can't do that." becomes that sentence plus the abilities list (built in code from the tool registry). An answer that starts with "What should I post to Discord? …" becomes exactly that question. The model is told to use these for actions no tool can do (scheduling, reading Discord, editing tasks), for content it won't post, and for post requests with no content. Because the server swaps in the fixed text, nothing the model adds after it gets through.
+4. If there are **no valid citations**, **no tool was called this turn**, and the user message is **not small talk**, replace the answer with the fixed refusal `"I don't know — this workspace's documents don't cover that."`
+   - Small talk is a simple regex on the user message (greetings, thanks, "who are you", "what can you do", "what abilities/tools do you have"; word stems so small typos still match). It's matched on letters only, after an optional greeting, so "hi , who are yo u" counts. The whole message must match. Everything else that's substantive is treated as needing a citation.
+   - Questions about the workspace's tasks ("when do I need to …") are answered by calling `list_tasks` (a prompt rule), never from chat history. History holds user text and old model wording, so trusting it would let an uncited "fact" through. The tool call satisfies the guard and gives fresh data.
    - The model's own refusal text is also uncited, so it's replaced by the identical fixed string, which is harmless.
-4. Save `retrieval.hit = citations.length > 0` for the debug panel and observability.
+5. Save `retrieval.hit = citations.length > 0` for the debug panel and observability.
 
 This keeps refusals deterministic: an uncited factual claim can never reach the user.
 
 ## 5. Tool loop
 
-```ts
-const TOOLS = {                  // allowlist: nothing else exists
-  save_task:            { schema: z.object({ title: z.string().min(1).max(200), due_date: z.string().date().optional() }), run },
-  list_tasks:           { schema: z.object({ limit: z.number().int().min(1).max(50).optional() }), run },
-  send_discord_summary: { schema: z.object({ summary: z.string().min(1).max(1800) }), run },
-};
+Built in Part 4 (`services/tools.ts`, `services/toolLoop.ts`, `services/chat.ts`).
 
-for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-  const res = await gemini(messages, toolDeclarations);
-  if (!res.functionCalls?.length) return saveAnswer(citationGuard(res.text, labelMap, { toolCalled, userMsg }));
-  for (const call of res.functionCalls) {
-    const tool = TOOLS[call.name];
-    if (!tool)            { log('unknown_tool'); push(errorResult(`Unknown tool ${call.name}`)); continue; }
-    const parsed = tool.schema.safeParse(call.args);
-    if (!parsed.success)  { log('invalid_args', parsed.error); push(errorResult(parsed.error.message)); continue; }
-    try   { const r = await tool.run(parsed.data, { workspaceId, chatId, messageId }); log('success', r); push(r); }
-    catch (e) { log('error', e.message); push(errorResult('Tool failed')); }
-  }
-}
-// iterations exhausted → final call without tools, or a fallback message
+```ts
+// tools.ts: the allowlist. A Map, so "toString" or "__proto__" can't match anything inherited.
+save_task            z.strictObject({ title: string 1–200 (trimmed), due_date?: z.iso.date() })
+list_tasks           z.strictObject({ limit?: int 1–50 })            // read-only, default 10
+send_discord_summary z.strictObject({ summary: string 1–1800 })
+
+// toolLoop.ts (pure: generate and execute are passed in, so it's unit-tested with fakes)
+for round in 0..MAX_TOOL_ITERATIONS:
+  reply = generate(contents, tools, mode = last round ? NONE : AUTO, model = pinned)
+  if no function calls (or last round) → return reply.text
+  contents += reply.content            // as received: keeps Gemini 3's thoughtSignature
+  contents += functionResponse per call (calls past the 5th are refused, not run)
+
+// executeToolCall(call, ctx): never throws, always logs one tool_calls row
+not in the Map          → unknown_tool, { error: "Unknown tool X. Available: …" }
+zod safeParse fails     → invalid_args, { error: prettified zod issues }
+run() throws ToolError  → error, { error: its message }      (other errors: generic message)
+otherwise               → success, { result }
 ```
 
-- `ctx.workspaceId` comes from the server. Tool schemas don't even have a `workspace_id` field.
-- **Dates:** in a real test the model called `save_task` with `due_date: "tomorrow"`. The tool declaration says `due_date` is `YYYY-MM-DD`, and the system prompt includes `Today is <YYYY-MM-DD>`, so the model can resolve relative dates itself. zod still rejects anything that isn't ISO, and that error goes back to the model to self-correct.
-- The Discord webhook URL is read from env and never echoed in results or logs.
-- There is no separate "does this need a tool?" LLM call. Tools are sent with the normal request.
-- The loop runs whether or not any chunks were kept. `toolCalled` is true once any tool executes successfully in this turn.
+- **Scope:** `ctx = { workspaceId, chatId, messageId }` comes from the server. No schema has a `workspace_id` field, and the schemas are strict, so a `workspace_id` the model invents is an `invalid_args` error in the log, never used.
+- **One source for schemas:** `z.toJSONSchema(schema)` becomes the Gemini declaration (`parametersJsonSchema`), so validation and what the model sees can't drift apart.
+- **Forced last answer:** after `MAX_TOOL_ITERATIONS` (3) rounds of calls, one more call runs with tools still declared but `mode: NONE`, so the model must answer in text. That's at most 4 LLM calls per message.
+- **One model per turn:** the model that answers the first round answers the rest (with its own retries). Thought signatures belong to the model that wrote them, so the turn never switches models halfway through.
+- **At most 5 calls per reply:** more are refused with an error response and logged as `error`, so one runaway reply can't post to Discord 40 times.
+- **Citation guard input:** `toolCalled` = the model asked for any tool this turn, whatever the outcome. If `save_task` keeps failing validation, the model's "I couldn't save that because…" reaches the user instead of the "I don't know" refusal. The labels in the turn's tool arguments also count as sources (§4).
+- **Times:** tasks have no time column (the brief asks for an optional due date only). A time the user gives ("in 3 min", "at 9pm") is worked out by the model from the current time in the prompt and kept in the title as "at HH:MM" ("Drink water at 22:01"), with `due_date` set to that day. Before this rule the model sometimes dropped the time silently. A `due_time` column was considered and left out to stay inside the brief. Known limit: the model does the clock arithmetic, and in testing it once got the date wrong for a time just past midnight.
+- **Dates:** the system prompt says `It is now Wednesday, 2026-11-18, 21:55 (Asia/Kolkata)`. The browser sends its IANA time zone with each message (and retry); an unknown zone falls back to UTC. The model resolves "Friday" itself. In testing it sent `2026-11-20`. zod rejects anything that isn't a real `YYYY-MM-DD` (`tomorrow`, `2026-02-30`), and the error goes back to the model so it can correct the call.
+- **Retry and side effects:** Retry re-runs the whole turn, so both side-effect tools are idempotent **per assistant message**:
+  - `save_task` returns the existing task if this message already saved one with the same title (ignoring case) and due date.
+  - `send_discord_summary` returns `already_sent` if this message already has a successful Discord call. The retried summary text won't be identical, so matching on the text wouldn't work.
+- **Discord:**
+  - The URL is read from env and is never in a result, error or log. A network failure becomes "Couldn't reach Discord".
+  - **A post needs a source (checked in code before sending):** either the summary cites `[cN]` chunks from this turn's prompt, or every word of it is in the user's current message (dictated). Otherwise it's refused with a reason, so the model can't post invented text, a "not found" note, the `NONE FOUND` marker, or text copied from older messages (all seen in the user's test on 2026-11-18). The prompt tells the model to put the labels inside the summary.
+  - `[cN]` labels are removed from the posted text.
+  - `allowed_mentions: { parse: [] }` stops an `@everyone` in a summary (perhaps from an uploaded document) from pinging anyone.
+  - There's a 10 s timeout.
+  - Not configured → `error` "Discord isn't set up on this server", and the model tells the user.
+- **Safety filter:** every Gemini call sets `safetySettings`: harassment, hate and sexually explicit content are blocked at LOW and above, dangerous content at MEDIUM and above. Newer models block nothing by default, and a dictated post goes to a shared channel. A blocked request or reply becomes a `done` answer "I can't help with that." It isn't `failed`, because Retry would be blocked again. That turn is left out of later history so it doesn't block the rest of the chat. The prompt also says never to post insults, sexual content or claims about a person.
+- **Logging is best-effort:** if writing the `tool_calls` row fails, it's printed and the turn continues. The side effect already happened, and failing the answer would invite a Retry that repeats it.
+- **Shown in the chat:** the messages API embeds each answer's tool calls (`tool_name, status, error, args`) through `tool_calls.message_id`. The client shows one small line per call under the answer ("✓ Saved task “…” (due …)" or "✕ Couldn't post to Discord · Discord isn't set up on this server"), also under a failed answer, because a tool may have run before it failed.
+- **Tool results aren't stored in `messages`.** `tool_calls` holds them. History for later turns is the user/assistant text, and the assistant's confirmation carries what was done.
+- There is no separate "does this need a tool?" LLM call. Tools are sent with every request, whether or not any chunks were kept.
 
 ## 6. Failure handling
 
@@ -233,14 +255,14 @@ for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
 
   | Model | Result | Use |
   |---|---|---|
-  | `gemini-3.6-flash` | called `save_task` correctly | **chat (primary)** |
-  | `gemini-3.5-flash-lite` | called the tool correctly | **chat fallback** |
+  | `gemini-3.5-flash-lite` | called the tool correctly; ~1 s answers | **chat (primary)** |
+  | `gemini-3.6-flash` | called `save_task` correctly, but later 503 on every call and then 429 (daily quota used up) | **chat fallback** |
   | `gemini-3.8-flash` | 503 "high demand" | no, often overloaded |
   | `gemini-4-hydrogen` | 503 three times, then a hung request | no |
   | `gemini-2.5-flash` | 404 "no longer available to new users" | no |
   | `gemini-embedding-001` | 768 values | **embeddings** |
 
-  A reliable model beats a newer one that's overloaded, because graders test at random times.
+  A reliable model beats a newer one that's overloaded, because graders test at random times. That's why the user made flash-lite the primary after Part 3 (see `docs/research/llm-models-and-latency.md`).
 - Gemini 429 or 5xx (including 503 "high demand"): retry up to 3 times with backoff of 1s, 2s and 4s, then make one attempt on `GEMINI_CHAT_FALLBACK_MODEL`. Only after that does the assistant message become `failed`.
 - Set a per-request timeout of about 30s on every Gemini call, because a hung request was seen in testing. A timeout counts as a retryable error.
 - An LLM failure never loses the user's message, because it is saved first. The assistant row is marked `failed` and the client shows Retry, which re-runs the same question.
