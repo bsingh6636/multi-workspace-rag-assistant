@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { StackIcon } from '@primer/octicons-react'
+import { CommentDiscussionIcon, FileIcon } from '@primer/octicons-react'
 import { toast } from 'sonner'
 import { deleteRequest, errorMessage, getRequest, patchRequest, postRequest } from '../lib/http'
+import { nextDefaultName } from '../lib/workspaceNames'
 import type { Profile, Workspace } from '../types'
+import ChatPanel from './ChatPanel'
 import DeleteWorkspaceDialog from './DeleteWorkspaceDialog'
 import DocumentsPanel from './DocumentsPanel'
 import UserMenu from './UserMenu'
@@ -14,6 +16,13 @@ import WorkspaceSwitcher from './WorkspaceSwitcher'
 // Which dialog is open (only one at a time).
 type DialogKind = 'create' | 'rename' | 'delete' | null
 
+// The workspace sections. Part 5 adds Tasks and the tool-call log.
+type Tab = 'chat' | 'documents'
+const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
+  { id: 'chat', label: 'Chat', icon: <CommentDiscussionIcon /> },
+  { id: 'documents', label: 'Documents', icon: <FileIcon /> },
+]
+
 // Logged-in shell: loads the user's workspaces, restores the last active one,
 // and handles switching, create, rename and delete. Panels for documents, chats,
 // tasks and the tool-call log are added in later parts.
@@ -23,6 +32,7 @@ export default function Dashboard({ user }: { user: User }) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<DialogKind>(null)
+  const [tab, setTab] = useState<Tab>('chat')
 
   // Bumped by "Try again" to re-run the load effect.
   const [loadAttempt, setLoadAttempt] = useState(0)
@@ -53,6 +63,7 @@ export default function Dashboard({ user }: { user: User }) {
   }
 
   const active = workspaces.find((ws) => ws.id === activeId)
+  const allNames = workspaces.map((ws) => ws.name)
 
   // Switch right away in the UI, then remember it on the server.
   async function switchTo(id: string) {
@@ -92,7 +103,8 @@ export default function Dashboard({ user }: { user: User }) {
   }
 
   return (
-    <div className="app">
+    // On the chat tab the app is exactly one window tall, so only the message list scrolls.
+    <div className={tab === 'chat' ? 'app app-fit' : 'app'}>
       <header className="app-header">
         <div className="app-header-left">
           <div className="app-mark" aria-hidden="true">
@@ -104,6 +116,14 @@ export default function Dashboard({ user }: { user: User }) {
               active={active}
               onSwitch={switchTo}
               onCreate={() => setDialog('create')}
+            />
+          )}
+          {/* Settings for the active workspace sit right next to its name. */}
+          {!loading && active && (
+            <WorkspaceMenu
+              canDelete={workspaces.length > 1}
+              onRename={() => setDialog('rename')}
+              onDelete={() => setDialog('delete')}
             />
           )}
         </div>
@@ -129,20 +149,24 @@ export default function Dashboard({ user }: { user: User }) {
 
         {!loading && active && (
           <>
-            <div className="page-head">
-              <h1>
-                <StackIcon size={20} />
-                {active.name}
-              </h1>
-              <WorkspaceMenu
-                canDelete={workspaces.length > 1}
-                onRename={() => setDialog('rename')}
-                onDelete={() => setDialog('delete')}
-              />
-            </div>
+            <nav className="tabs" aria-label="Workspace sections">
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="tab"
+                  aria-current={tab === t.id ? 'page' : undefined}
+                  onClick={() => setTab(t.id)}
+                >
+                  {t.icon}
+                  {t.label}
+                </button>
+              ))}
+            </nav>
 
-            {/* key: a new workspace gets a fresh panel, so the old list never flashes. */}
-            <DocumentsPanel key={active.id} workspaceId={active.id} />
+            {/* key: a new workspace gets a fresh panel, so the old workspace's data never flashes. */}
+            {tab === 'chat' && <ChatPanel key={active.id} workspaceId={active.id} />}
+            {tab === 'documents' && <DocumentsPanel key={active.id} workspaceId={active.id} />}
           </>
         )}
       </main>
@@ -151,6 +175,8 @@ export default function Dashboard({ user }: { user: User }) {
         <WorkspaceNameDialog
           title="Create a new workspace"
           submitLabel="Create workspace"
+          initialName={nextDefaultName(allNames)}
+          takenNames={allNames}
           onSubmit={createWorkspace}
           onClose={() => setDialog(null)}
         />
@@ -160,6 +186,7 @@ export default function Dashboard({ user }: { user: User }) {
           title="Rename workspace"
           submitLabel="Rename"
           initialName={active.name}
+          takenNames={workspaces.filter((ws) => ws.id !== active.id).map((ws) => ws.name)}
           onSubmit={renameWorkspace}
           onClose={() => setDialog(null)}
         />

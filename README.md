@@ -203,7 +203,7 @@ There is no separate "is a tool needed?" LLM call. The tool definitions are sent
 
 Refusal is enforced in two layers:
 
-1. **Prompt:** only chunks scoring at least `SIMILARITY_THRESHOLD` (default `0.5`) are sent. The system prompt tells the model to answer only from `<documents>` and to reply "I don't know — this workspace's documents don't cover that." when the answer isn't there, never from general knowledge.
+1. **Prompt:** only chunks scoring at least `SIMILARITY_THRESHOLD` (default `0.62`, measured on test docs) are sent. The system prompt tells the model to answer only from `<documents>` and to reply "I don't know — this workspace's documents don't cover that." when the answer isn't there, never from general knowledge.
 2. **Code (citation guard):** after the model answers, every `[cN]` citation must match a chunk that was actually in the prompt, and invented ones are stripped. If the answer has no valid citation, no tool was called and the message isn't small talk, the server replaces it with the fixed "I don't know" message. An uncited factual claim never reaches the user.
 
 ### HNSW and filtering trade-off
@@ -246,8 +246,10 @@ GEMINI_API_KEY=
 GEMINI_CHAT_MODEL=gemini-3.6-flash
 GEMINI_CHAT_FALLBACK_MODEL=gemini-3.5-flash-lite   # used when the primary is rate-limited or overloaded
 GEMINI_EMBED_MODEL=gemini-embedding-001          # called with outputDimensionality 768
+GEMINI_EMBED_RPM=100                             # embedding quota per minute (AI Studio → Rate limits);
+GEMINI_EMBED_TPM=30000                           #   one upload may use at most 95% of it
 DISCORD_WEBHOOK_URL=
-SIMILARITY_THRESHOLD=0.5
+SIMILARITY_THRESHOLD=0.62
 MAX_TOOL_ITERATIONS=3
 
 # client/.env

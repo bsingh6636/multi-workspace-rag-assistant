@@ -1,14 +1,12 @@
 import { createHash } from 'node:crypto';
-import { ApiError } from '@google/genai';
+import { config } from '../config';
 import { DOCUMENT_COLUMNS, supabase, UNIQUE_VIOLATION, type DocumentRow } from '../db';
 import { HttpError } from '../lib/httpError';
 import { chunkMarkdown, chunkPages, normalizeText, type Chunk } from './chunker';
 import { embedTexts } from './embeddings';
+import { describeAiError } from './gemini';
 import { extractText } from './extract';
-
-// Embedding is the slow, rate-limited step, and it runs inside the upload
-// request. 300 chunks (~200 KB of text) is 15 embedding calls.
-export const MAX_CHUNKS_PER_DOCUMENT = 300;
+import { documentSizeError } from './uploadLimit';
 
 // Chunks are embedded and inserted 20 at a time: each row carries 768 floats.
 const INSERT_BATCH = 20;
@@ -33,9 +31,18 @@ export async function ingestDocument(workspaceId: string, file: UploadedFile): P
   }
 
   const chunks: Chunk[] = extracted.kind === 'pdf' ? chunkPages(extracted.pages) : chunkMarkdown(fullText);
-  if (chunks.length > MAX_CHUNKS_PER_DOCUMENT) {
-    throw new HttpError(400, `This document is too long (${chunks.length} chunks, max ${MAX_CHUNKS_PER_DOCUMENT}).`);
-  }
+  // Embedding is the slow, rate-limited step and runs inside this request, so
+  // a document must fit in 95% of one minute's embedding quota. Checked before
+  // any embedding or DB write, so a rejected file leaves no trace.
+  const sizeError = documentSizeError(
+    {
+      chunks,
+      pageCount: extracted.kind === 'pdf' ? extracted.pages.length : null,
+      textLength: fullText.length,
+    },
+    { rpm: config.GEMINI_EMBED_RPM, tpm: config.GEMINI_EMBED_TPM },
+  );
+  if (sizeError) throw new HttpError(413, sizeError);
 
   // 2. Idempotency: the same text in the same workspace is stored only once.
   const contentHash = createHash('sha256').update(fullText).digest('hex');
@@ -89,7 +96,8 @@ export async function ingestDocument(workspaceId: string, file: UploadedFile): P
 
     return { document: await setStatus(document.id, { status: 'ready', chunk_count: chunks.length }), duplicate: false };
   } catch (err) {
-    const message = describeError(err);
+    const message =
+      describeAiError(err, 'embedding service') || (err instanceof Error ? err.message : String(err)).slice(0, 500);
     console.error(`Ingestion failed for document ${document.id}: ${message}`);
 
     // Don't leave half a document searchable.
@@ -124,16 +132,4 @@ async function setStatus(
     .single<DocumentRow>();
   if (error) throw error;
   return data;
-}
-
-// A short message for documents.error, shown to the user. Gemini's raw errors
-// are long JSON, so they're summarized by status.
-function describeError(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.status === 429) return 'The embedding service is rate-limited. Please try again in a minute.';
-    if (err.status >= 500) return 'The embedding service is unavailable right now. Please try again.';
-    return `The embedding request was rejected (status ${err.status}).`;
-  }
-  const message = err instanceof Error ? err.message : String(err);
-  return message.slice(0, 500) || 'Unknown error';
 }

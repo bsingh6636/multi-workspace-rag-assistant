@@ -29,5 +29,38 @@ export type DocumentRow = {
 // Columns returned to the client for a document (content_hash stays server-side).
 export const DOCUMENT_COLUMNS = 'id, workspace_id, filename, status, error, chunk_count, created_at';
 
+export type Chat = {
+  id: string;
+  workspace_id: string;
+  title: string | null;
+  created_at: string;
+};
+
+/** One source of an answer, stored in messages.citations. */
+export type Citation = {
+  label: string; // prompt-local label, e.g. "c1" (matches [c1] in the answer text)
+  chunk_id: string;
+  document_id: string;
+  filename: string;
+  section: string | null;
+  similarity: number;
+};
+
+export type MessageRow = {
+  id: string;
+  chat_id: string;
+  workspace_id: string;
+  role: 'user' | 'assistant' | 'tool';
+  content: string | null;
+  citations: Citation[];
+  retrieval: unknown;
+  status: 'pending' | 'done' | 'failed';
+  error: string | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  latency_ms: number | null;
+  created_at: string;
+};
+
 // Postgres error code for a UNIQUE constraint violation.
 export const UNIQUE_VIOLATION = '23505';

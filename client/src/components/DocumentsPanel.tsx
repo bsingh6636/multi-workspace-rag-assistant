@@ -133,7 +133,7 @@ export default function DocumentsPanel({ workspaceId }: { workspaceId: string })
           <FileIcon size={24} />
           <h3>No documents yet</h3>
           <p className="muted">
-            Upload or drop .txt, .md or .pdf files (up to 5 MB). The assistant answers only from this workspace's
+            Upload or drop .txt, .md or .pdf files (up to 5 MB, roughly 20 pages of text each). The assistant answers only from this workspace's
             documents.
           </p>
         </div>

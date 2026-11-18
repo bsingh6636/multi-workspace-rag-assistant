@@ -41,14 +41,14 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 **Done when:** you can upload 2 docs, the chunk rows appear with the right `workspace_id`, and re-uploading the same file adds no chunks.
 
 ## Part 3: Scoped RAG chat (~2h)
-- [ ] `services/retrieve.ts`: embed the query, then call `rpc('match_chunks', { ws_id, query_embedding, k })`
-- [ ] Threshold as a **filter**: keep only chunks with similarity ≥ `SIMILARITY_THRESHOLD`. Zero is allowed, and the LLM is **always** called (never gated)
-- [ ] Build the prompt: system rules, then `<documents>` holding `<chunk label="c1" …>` blocks (or `NONE FOUND`), then recent history, then the question
-- [ ] Citation guard (`services/citations.ts`): strip `[cN]` labels that weren't in the prompt. If there's no valid citation, no tool was called, and the message isn't small talk, replace the answer with the fixed "I don't know" message
-- [ ] Chats: `GET/POST /api/workspaces/:wsId/chats`, `GET/POST /chats/:id/messages`
-- [ ] Save the user message **first**. Create the assistant message as `pending`, then mark it `done` or `failed`
-- [ ] Save `citations` (chunk id, document filename, section, similarity) on the assistant message
-- [ ] Client: chat UI with citations under each answer and a retry button on failed messages
+- [x] `services/retrieve.ts`: embed the query, then call `rpc('match_chunks', { ws_id, query_embedding, k })`
+- [x] Threshold as a **filter**: keep only chunks with similarity ≥ `SIMILARITY_THRESHOLD`. Zero is allowed, and the LLM is **always** called (never gated)
+- [x] Build the prompt: system rules, then `<documents>` holding `<chunk label="c1" …>` blocks (or `NONE FOUND`), then recent history, then the question
+- [x] Citation guard (`services/citations.ts`): strip `[cN]` labels that weren't in the prompt. If there's no valid citation, no tool was called, and the message isn't small talk, replace the answer with the fixed "I don't know" message
+- [x] Chats: `GET/POST /api/workspaces/:wsId/chats`, `GET/POST /chats/:id/messages`
+- [x] Save the user message **first**. Create the assistant message as `pending`, then mark it `done` or `failed`
+- [x] Save `citations` (chunk id, document filename, section, similarity) on the assistant message
+- [x] Client: chat UI with citations under each answer and a retry button on failed messages
 
 **Done when:** the Falcon fact in A is answered with a citation, asking for it in B gets "I don't know", and a general-knowledge question ("What is the capital of France?") also gets "I don't know".
 
@@ -92,6 +92,7 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 - [ ] Add the deployed URL to Supabase **Authentication → URL Configuration → Redirect URLs**
 - [ ] Fill in the live URL and demo login in `README.md`, and update anything that changed
 - [ ] `.env.example` is complete
+- [ ] **Pagination check (user reminder):** review the lists that can grow (documents, chats, tool-call log, tasks) and make sure each endpoint has a `limit` or pagination, so a big workspace doesn't load everything at once. Message pagination inside a chat stays out of scope (CLAUDE.md)
 - [ ] `AI_NOTES.md` (about one page): tools and models used, how the work was split, 2–3 decisions of your own, the hardest AI bug (from `AI_CHANGE_LOG.md` ⚠ entries), and improvements. Mention the HNSW and filter trade-off
 - [ ] Final check of the whole demo on the live URL
 

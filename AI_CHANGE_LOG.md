@@ -169,3 +169,93 @@ Entry format:
 - **Files:** `server/tsconfig.json`, `server/test/tsconfig.json` (new), `server/package.json`
 - **What:** The root tsconfig now lists `"types": ["node"]` explicitly. A new `test/tsconfig.json` extends it, includes `test/` and `src/`, and never emits, so the editor type-checks the tests with Node's types. `npm run typecheck` now checks the tests too.
 - **Why:** The user's editor showed "Cannot find name 'node:assert/strict'" in `test/chunker.test.ts`. The Part 2 work added `test/` outside the tsconfig `include` (only `src`), so the editor checked it as a loose file. Recent TypeScript no longer loads every `@types` package by default, and `src/` only got Node's types indirectly through `@types/express`. `tsx --test` doesn't type-check, so the tests still ran and nothing caught it.
+
+## 2026-11-18 04:50 IST: Part 3 plan: scoped RAG chat
+- **Files:** `docs/plans/part-3-rag-chat.md` (new)
+- **What:** Wrote the detailed Part 3 plan: retrieval with the threshold as a filter, the prompt layout (system rules, XML-escaped `<documents>` with prompt-local labels, history with old labels stripped), the LLM call with retry and fallback model, the citation guard with a small-talk exception, chat and message routes including retry of a failed answer, and the client chat UI. Lists the decisions to review and how to tune the threshold.
+- **Why:** Part 3 of `PLAN.md`, following the plan-file-first workflow. A probe just before planning found `gemini-3.6-flash` returning 503 "high demand" while `gemini-3.5-flash-lite` answered correctly with a `[c1]` citation, so the fallback path is needed in practice, not just on paper.
+
+## 2026-11-18 04:50 IST: Part 3 code: retrieval, prompt, LLM with fallback, citation guard, chats; chat UI
+- **Files:** `server/src/config.ts`, `server/src/db.ts`, `server/src/types/express.d.ts`, `server/src/services/{retrieve,prompt,llm,citations,chat}.ts` (new), `server/src/middleware/chat.ts` (new), `server/src/routes/{chat,workspace}.routes.ts`, `server/src/controllers/chat.controller.ts` (new), `server/test/citations.test.ts` (new), `client/src/types.ts`, `client/src/components/{ChatPanel,ChatMessage}.tsx` (new), `client/src/components/Dashboard.tsx`, `client/src/index.css`
+- **What:** The chat flow from `docs/plans/part-3-rag-chat.md`: the user message is saved first, then a pending assistant row. Retrieval runs `match_chunks` (workspace filter inside the query) and keeps chunks at or above the threshold (zero is fine). The prompt holds escaped, labelled chunks. Gemini is called with retry and the fallback model. The citation guard strips invented labels and forces the fixed refusal for uncited answers. Retry reuses the failed row. Client: a chat tab with a chat list, messages, sources and Retry.
+- **Why:** Part 3 of `PLAN.md`.
+
+## 2026-11-18 04:59 IST: Set SIMILARITY_THRESHOLD to 0.62 from measured scores; record Part 3 results
+- **Files:** `.env.example`, `server/.env` (local), `server/src/config.ts`, `docs/DESIGN.md`, `README.md`, `docs/plans/part-3-rag-chat.md`, `PLAN.md`
+- **What:** The default threshold goes from 0.5 to 0.62 everywhere. DESIGN §2 records the measurement. The Part 3 plan gets a results section (end-to-end checks, scores, latency). Ticked the Part 3 server items in `PLAN.md`.
+- **Why:** In the Part 3 end-to-end test (`gemini-embedding-001`, 768 dims, normalized), relevant questions scored 0.69–0.79 top-1 and unrelated ones 0.54–0.58, across 13 questions in two workspaces. At 0.5 every unrelated question would put chunks in the prompt. 0.62 sits in the gap, a little closer to the unrelated side, because dropping a real answer is worse than letting an off-topic chunk through (the prompt and citation guard still refuse). Retune on the Part 6 seed docs.
+
+## 2026-11-18 05:01 IST: Tick the Part 3 client item after a browser check
+- **Files:** `PLAN.md`, `docs/plans/part-3-rag-chat.md`
+- **What:** Ticked "Client: chat UI…" and added the browser results to the Part 3 plan.
+- **Why:** Headless Chrome (puppeteer-core installed only in the session scratchpad, not the repo) logged in as a throwaway user, asked two questions through the UI, reloaded and switched tabs. The cited answer, the Sources box, the refusal, the history after reload, the Documents tab and the 390px mobile layout all rendered correctly. The test user was deleted afterwards.
+
+## 2026-11-18 05:06 IST: ⚠ AI mistake: chat tab overflowed the window and shifted the layout; thin themed scrollbars
+- **Files:** `client/src/components/Dashboard.tsx`, `client/src/index.css`
+- **What:** The app shell is now a flex column. On the Chat tab it gets `app-fit` (exactly one window tall), and the chat box takes the remaining height with `flex: 1` instead of `height: calc(100vh - 230px)`. So the page itself never scrolls there; only the message list and chat list do. `html { scrollbar-gutter: stable }` keeps the page width the same whether or not a page scrollbar is showing, so switching tabs can't move the content sideways. All scrollbars are thin and use theme colours (`--scrollbar-thumb`, light and dark).
+- **Why:** The user saw the layout jump when switching between Chat and Documents, and a page scrollbar on the Chat tab even in full screen. The Part 3 chat CSS guessed the space above the chat as a fixed 230px. The real header, title, tabs and padding are taller, so the page overflowed by a few pixels and showed a scrollbar on Chat only. That scrollbar made the centred content narrower, so it jumped. Noticed by the user from a screenshot.
+
+## 2026-11-18 05:07 IST: "New chat" is disabled while the current chat is already empty
+- **Files:** `client/src/components/ChatPanel.tsx`
+- **What:** `isEmptyChat = activeChatId === null && messages.length === 0`, computed during render. The New chat button is disabled when it's true (no chats yet, or New chat was just clicked), with a tooltip saying why.
+- **Why:** The user asked for it: clicking New chat on an already-empty chat does nothing. A derived value was used instead of the user's `useEffect` + `chats.length` idea. An effect would add an extra render and a second copy of the state. Also, `chats.length` alone would be wrong: with saved chats in the list, the user can still be sitting on a fresh empty chat. A chat row is only created when its first message is sent, so a saved chat is never empty and `activeChatId === null` covers every empty case.
+
+## 2026-11-18 05:09 IST: Unsent chat drafts are kept per chat in localStorage
+- **Files:** `client/src/components/ChatPanel.tsx`
+- **What:** The composer text is saved to localStorage as you type, under `draft:<workspaceId>:<chatId or "new">`. Opening a chat, starting a new chat or reloading the page brings back that chat's draft. Sending clears it. If a send fails and the question wasn't saved, the text goes back into the box and back into storage. Every storage access is in try/catch, so a private window or blocked storage just means no draft is kept.
+- **Why:** The user asked how ChatGPT and Claude keep a half-typed message and to copy that if it was simple. localStorage was chosen over IndexedDB because a draft is one short string per chat. It's per-browser convenience, not data, so it doesn't belong in the database.
+
+## 2026-11-18 05:10 IST: Client retries GET requests twice (after 3s, then 5s) when the server can't be reached
+- **Files:** `client/src/lib/http.ts`
+- **What:** In the axios response interceptor, a GET that fails with no response or a 502/503/504 is retried after 3 s, and again after 5 s. Only then does the caller get "Can't reach the server". Loading states (spinners) stay up during the retries. POST, PATCH and DELETE are never retried automatically, because repeating them could, for example, send a chat message twice.
+- **Why:** The user's screenshot showed "Couldn't load your workspaces: Can't reach the server" right after the API restarted (`tsx watch` restarts it whenever a server file changes; a deploy would do the same). The user asked for 2 retries at 3 s and 5 s.
+
+## 2026-11-18 05:14 IST: ⚠ AI mistake: answers and uploads stuck forever when the server restarts mid-request
+- **Files:** `server/src/services/recovery.ts` (new), `server/src/index.ts`, `docs/DESIGN.md`
+- **What:** On startup, before it accepts requests, the server runs `failInterruptedWork()`. Any assistant message still `pending` becomes `failed` ("The server restarted while answering. Please retry."), so the client shows Retry. Any document still `processing` becomes `failed`, and its partial chunks are deleted. Then `app.listen` runs. If the cleanup itself fails (e.g. the DB is unreachable), it's logged and the server starts anyway.
+- **Why:** The user's screenshots showed "capital of france" stuck on "Thinking…", still there after a reload. The assistant row had been saved as `pending`, and then `tsx watch` restarted the server mid-answer, so nothing ever marked it `done` or `failed` (hard rule 9 assumed the process survives). Uploads had the same hole, and it was worse: a document stuck in `processing` is returned as a "duplicate" on re-upload, so the file could never be added again. Its partial chunks were also still searchable, because `match_chunks` doesn't filter on document status. A startup sweep was chosen over the SIGINT/SIGTERM handler the user suggested. A signal handler doesn't run on a crash, `kill -9` or an out-of-memory kill, and would need tracking of in-flight requests. The sweep covers every case, because the server always starts again before anyone can use it. It relies on there being one server process (one container, as decided); with several instances it would fail another instance's live work.
+
+## 2026-11-18 05:22 IST: Research notes: Gemini model checks, LLM latency benchmark, upload rate limit
+- **Files:** `docs/research/llm-models-and-latency.md` (new), `docs/research/bench-llm.mjs` (new)
+- **What:** Wrote down the Gemini model availability tests (which models answer on the free key, tool calling, 768-dim embeddings), the latency benchmark of Gemini against Claude through MWAPI (same RAG-shaped request, with medians), the quota errors seen, and why a 34-page PDF upload failed with "embedding service is rate-limited". Saved the benchmark script so it can be run again. It reads keys from env vars and contains no secrets.
+- **Why:** The user asked to keep these results as research notes in the repo. They back the model choices and the next fixes to retries and fallback.
+
+## 2026-11-18 05:24 IST: Answer sources become a collapsible accordion
+- **Files:** `client/src/components/ChatMessage.tsx`, `client/src/index.css`
+- **What:** The Sources box under an answer is now a native `<details>` element, collapsed by default. The summary row reads e.g. "5 sources from 3 documents", with a chevron that turns when it opens. Expanding it shows the same numbered list (file, page/section, similarity) as before.
+- **Why:** The user asked for sources as a collapsible accordion: a long source list under every answer made the chat hard to scan. `<details>/<summary>` needs no state or JS and is keyboard- and screen-reader-accessible out of the box.
+
+## 2026-11-18 05:30 IST: Answers drop inline citation numbers; sources are listed once per document
+- **Files:** `client/src/components/ChatMessage.tsx`, `client/src/index.css`
+- **What:** The `[cN]` markers are removed from the displayed answer text (with the space before them), so no superscript numbers appear after each point. The collapsible Sources list now shows each document once: filename, the pages/sections it was cited from, and its best similarity score. The summary reads e.g. "Sources · 3 documents". Display only: the server still uses `[cN]` for the citation guard and stores per-chunk citations unchanged.
+- **Why:** The user found the numbers after every point noisy and asked for just the documents, numbered, in the collapsible at the end. The same file used to appear several times when several of its chunks were cited.
+
+## 2026-11-18 05:33 IST: Research notes: MWAPI can't serve Gemini or embeddings
+- **Files:** `docs/research/llm-models-and-latency.md`
+- **What:** Added §5: MWAPI lists only 10 Claude models. Its `/embeddings` returns 404 "Embeddings API is not supported", a Gemini-style `:embedContent` returns 404, and `/messages` with a Gemini model returns `model_not_found`. Also recorded why a different embedding model can't be a fallback, and the options that do work.
+- **Why:** The user asked whether MWAPI could act as a same-model Gemini fallback when the Gemini rate limit hits, so uploads don't break. The probes show it can't.
+
+## 2026-11-18 05:36 IST: Workspace title row removed; settings menu moves next to the switcher; wider main area
+- **Files:** `client/src/components/Dashboard.tsx`, `client/src/components/WorkspaceMenu.tsx`, `client/src/index.css`
+- **What:** Removed the page heading (workspace name + "…" menu) above the tabs. The "…" workspace settings menu (Rename / Delete) now sits in the header right after the workspace switcher. The tabs are the first row of the main area. `.app-main` max width goes from 1012px to 1280px (still centred, not full width).
+- **Why:** The user pointed out the heading repeated the name already shown in the header switcher and took vertical space from the chat. Putting the settings menu beside the switcher keeps every workspace action (switch, create, rename, delete) in one spot, next to the name it acts on.
+
+## 2026-11-18 05:38 IST: Workspace names are unique ignoring case; new workspaces default to Default, Default_2, …
+- **Files:** `server/src/controllers/workspace.controller.ts`, `client/src/lib/workspaceNames.ts` (new), `client/src/components/WorkspaceNameDialog.tsx`, `client/src/components/Dashboard.tsx`, `client/src/index.css`, `docs/DESIGN.md`
+- **What:** The server rejects a create or rename with 409 "A workspace named “X” already exists" when another of the user's workspaces has the same name, ignoring case and surrounding spaces. Before, only exact matches were blocked by `UNIQUE (user_id, name)`, so "Research" and "research" could both exist. The create dialog now starts filled with the next free name: "Default", then "Default_2", "Default_3", and so on. The dialog shows the duplicate error under the input as you type and disables the submit button, so you don't have to wait for the server round trip.
+- **Why:** The user asked that two workspaces can never share a name, that the default follows the Default / Default_2 pattern, and that a duplicate shows an error. The DB constraint stays as the backstop for two exact-name requests racing.
+
+## 2026-11-18 05:43 IST: Upload size limit = 95% of one minute's embedding quota
+- **Files:** `server/src/config.ts`, `server/src/services/ingest.ts`, `server/src/services/uploadLimit.ts` (new), `server/test/uploadLimit.test.ts` (new), `client/src/components/DocumentsPanel.tsx`, `.env.example`, `README.md`, `docs/DESIGN.md`, `docs/research/llm-models-and-latency.md`
+- **What:** Replaced the fixed 300-chunk cap with a limit taken from the embedding quota. A document may need at most 95% of one minute's quota: chunks ≤ 95% of `GEMINI_EMBED_RPM` (each chunk counted as one request) and chunk text ≤ 95% of `GEMINI_EMBED_TPM` × 4 characters per token. The defaults are 100 RPM and 30,000 TPM, set in env. A larger file is rejected with 413 before any embedding or DB write, and the message gives its size in pages (PDF) or characters and the approximate maximum. The check is a pure function with unit tests.
+- **Why:** A 34-page PDF failed partway through with "embedding service is rate-limited", because embedding it needed more than one minute of the free quota, while the 300-chunk cap allowed it. The user asked to block uploads above 95% of what fits, with a clear error. Google doesn't publish free-tier embedding limits (they're per account in AI Studio), so the values are env vars with commonly seen defaults.
+
+## 2026-11-18 05:48 IST: Startup cleanup always logs its result
+- **Files:** `server/src/index.ts`, `server/src/services/recovery.ts`
+- **What:** `failInterruptedWork()` now returns `{ answers, uploads }` (how many rows it marked failed) instead of logging only when something was found. `start()` logs "Startup cleanup: marked N interrupted answer(s) and M interrupted upload(s) as failed" on every boot, including 0/0.
+- **Why:** The user asked for a log at the cleanup call in `start()`. Before, a clean boot printed nothing, so you couldn't tell from the logs whether cleanup had run at all.
+
+## 2026-11-18 06:04 IST: Reminder in PLAN.md: check pagination at the end
+- **Files:** `PLAN.md`
+- **What:** Added a Part 8 item: review the list endpoints that can grow (documents, chats, tool-call log, tasks) and make sure each has a limit or pagination. Message pagination inside a chat stays out of scope (CLAUDE.md).
+- **Why:** The user asked to be reminded to check pagination where it's needed, at the end of the build.

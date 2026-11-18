@@ -6,6 +6,7 @@ import {
   renameWorkspace,
 } from '../controllers/workspace.controller';
 import { loadWorkspace } from '../middleware/workspace';
+import chatRoutes from './chat.routes';
 import documentRoutes from './document.routes';
 
 // Mounted at /api/workspaces. Paths only; the handlers live in the controller.
@@ -23,5 +24,6 @@ router.patch('/:wsId', renameWorkspace);
 router.delete('/:wsId', deleteWorkspace);
 
 router.use('/:wsId/documents', documentRoutes);
+router.use('/:wsId/chats', chatRoutes);
 
 export default router;

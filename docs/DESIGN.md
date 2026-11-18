@@ -17,7 +17,9 @@ workspaces
   user_id     uuid NOT NULL → auth.users(id) ON DELETE CASCADE
   name        text NOT NULL
   created_at  timestamptz
-  UNIQUE (user_id, name)
+  UNIQUE (user_id, name)   -- exact-match backstop; the API also rejects
+                           -- case-insensitive duplicates ("Research" vs "research") with 409.
+                           -- New workspaces default to "Default", "Default_2", "Default_3", …
 
 documents
   id            uuid PK
@@ -104,7 +106,7 @@ language sql stable as $$
 $$;
 ```
 
-- `k = 5`, with `SIMILARITY_THRESHOLD` defaulting to `0.5`. Tune it on the seed docs and write down the chosen value.
+- `k = 5`, with `SIMILARITY_THRESHOLD` = **0.62**. Measured on 2026-11-18 (Part 3 end-to-end test, 13 questions over a Falcon doc and an HR handbook in two workspaces): relevant questions scored **0.69–0.79** top-1, unrelated ones (general knowledge, the other workspace's topic, "save a task…") **0.54–0.58**. 0.62 sits in the gap, slightly toward the unrelated side, because missing a real answer is worse than letting an off-topic chunk into the prompt (the prompt rules and citation guard still refuse). Re-measure on the Part 6 seed docs.
 - The threshold **filters** chunks after retrieval. It never decides whether the LLM gets called (see §4).
 - Embedding model: `gemini-embedding-001` (`GEMINI_EMBED_MODEL`) with `outputDimensionality: 768`. A real request on 2026-11-18 returned 768 values. `gemini-embedding-2` also works and is kept as an option.
 - Embedding task types: `RETRIEVAL_DOCUMENT` for chunks and `RETRIEVAL_QUERY` for questions. Chunks and queries **must** use the same model and dimension. Changing the model means re-embedding every chunk.
@@ -115,7 +117,7 @@ $$;
 1. multer memory storage, 5 MB limit, one file in field `file`, extensions `.txt`, `.md` and `.pdf` only. Filenames are re-decoded as UTF-8 (multer reads them as latin1).
 2. Extract text: pdf-parse v2 for PDFs (text per page), `buffer.toString('utf8')` for the rest.
 3. Normalize: `\r\n` → `\n`, drop the BOM and NUL bytes (Postgres text can't hold NUL), trim line ends, collapse 3+ blank lines. Empty after that (for example a scanned PDF) → 400. Then compute `sha256(text)`.
-4. Chunk (before any DB write, so a bad file leaves no trace). More than **300 chunks** (about 200 KB of text) → 400, because embedding runs inside the request and the free tier is rate-limited.
+4. Chunk (before any DB write, so a bad file leaves no trace). The document must fit in **95% of one minute's embedding quota**: chunks ≤ 95% of `GEMINI_EMBED_RPM` (each chunk counted as one request) and chunk text ≤ 95% of `GEMINI_EMBED_TPM` × 4 characters per token. With the defaults (100 RPM, 30,000 TPM) that is 95 chunks, roughly 20 PDF pages. Anything bigger → **413** with the size in pages or characters and the approximate maximum (`services/uploadLimit.ts`). Reason: embedding runs inside the request with short retries, so a document needing more than a minute of quota failed halfway with a 429 (`docs/research/llm-models-and-latency.md` §3).
 5. Look up `(workspace_id, content_hash)`:
    - `ready` or `processing` → return `{ document, duplicate: true }` and stop.
    - `failed` → delete that row and carry on, so a document that failed once (for example during a Gemini outage) can be uploaded again.
@@ -243,6 +245,7 @@ for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
 - Set a per-request timeout of about 30s on every Gemini call, because a hung request was seen in testing. A timeout counts as a retryable error.
 - An LLM failure never loses the user's message, because it is saved first. The assistant row is marked `failed` and the client shows Retry, which re-runs the same question.
 - Ingestion failure: the document is marked `failed` with the error, and partial chunks are removed.
+- **Interrupted work (server stopped mid-request):** a crash, restart or deploy between "row saved as `pending`/`processing`" and "row marked done/failed" would leave it stuck forever (endless "Thinking…"; a stuck document even blocks re-upload as a "duplicate"). On startup, before listening, `services/recovery.ts` marks every `pending` message and `processing` document `failed` and deletes that document's partial chunks, so Retry / re-upload work. This is safe because the app is one process: at startup nothing is really in progress. A SIGTERM handler was rejected because it doesn't run on crashes, `kill -9` or out-of-memory kills. With several instances this would need a per-row timeout instead.
 - Every route is wrapped in try/catch, followed by a JSON error. Stack traces and env values are never returned to the client.
 
 ## 6b. Server code layout and errors

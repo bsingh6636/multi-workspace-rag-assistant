@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { supabase } from './supabase'
 
 // An error from our API. `message` is always safe to show to the user;
@@ -16,6 +16,13 @@ export class ApiError extends Error {
 // proxies to Express in dev and Express serves itself in production.
 const http = axios.create({ baseURL: '/api' })
 
+// When the server can't be reached, a GET is retried after 3s and then 5s before
+// giving up (covers the API restarting, e.g. tsx watch in dev or a deploy).
+// Only GETs: repeating a POST could, say, send a chat message twice.
+const RETRY_DELAYS_MS = [3_000, 5_000]
+type RetryConfig = InternalAxiosRequestConfig & { retryCount?: number }
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
 // Attach the current Supabase access token to every request.
 // getSession() also refreshes the token first if it has expired.
 http.interceptors.request.use(async (config) => {
@@ -29,7 +36,7 @@ http.interceptors.request.use(async (config) => {
 // need `catch (e) { toast.error(e.message) }`.
 http.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     if (!axios.isAxiosError<{ error?: string }>(error)) {
       return Promise.reject(new ApiError('Something went wrong', 0))
     }
@@ -38,6 +45,14 @@ http.interceptors.response.use(
 
     // No response, or the dev proxy saying Express isn't running.
     if (status === 0 || status === 502 || status === 503 || status === 504) {
+      // The server may just be restarting: retry GETs a couple of times first.
+      const config = error.config as RetryConfig | undefined
+      const attempt = config?.retryCount ?? 0
+      if (config?.method === 'get' && attempt < RETRY_DELAYS_MS.length) {
+        config.retryCount = attempt + 1
+        await sleep(RETRY_DELAYS_MS[attempt])
+        return http(config) // goes through the interceptors again (fresh token too)
+      }
       return Promise.reject(new ApiError("Can't reach the server. Please try again.", status))
     }
 

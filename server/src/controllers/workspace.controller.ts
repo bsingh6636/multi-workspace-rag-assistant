@@ -7,7 +7,18 @@ const nameSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(80, 'Name is too long (max 80)'),
 });
 
-const DUPLICATE_NAME = 'A workspace with that name already exists';
+const duplicateName = (name: string) => new HttpError(409, `A workspace named “${name}” already exists`);
+
+// Names are unique per user ignoring case, so "Research" and "research" can't both exist.
+// The DB's UNIQUE (user_id, name) only catches exact matches, so this check runs first.
+// exceptId skips the workspace being renamed, so a case-only rename is allowed.
+async function assertNameFree(userId: string, name: string, exceptId?: string) {
+  const { data, error } = await supabase.from('workspaces').select('id, name').eq('user_id', userId);
+  if (error) throw error;
+
+  const clash = data.some((ws) => ws.id !== exceptId && ws.name.toLowerCase() === name.toLowerCase());
+  if (clash) throw duplicateName(name);
+}
 
 // GET /api/workspaces: the logged-in user's workspaces, oldest first.
 export async function listWorkspaces(req: Request, res: Response) {
@@ -24,13 +35,14 @@ export async function listWorkspaces(req: Request, res: Response) {
 // POST /api/workspaces  { name }
 export async function createWorkspace(req: Request, res: Response) {
   const { name } = nameSchema.parse(req.body);
+  await assertNameFree(req.user!.id, name);
 
   const { data, error } = await supabase
     .from('workspaces')
     .insert({ user_id: req.user!.id, name })
     .select()
     .single();
-  if (error?.code === UNIQUE_VIOLATION) throw new HttpError(409, DUPLICATE_NAME);
+  if (error?.code === UNIQUE_VIOLATION) throw duplicateName(name);
   if (error) throw error;
 
   res.status(201).json(data);
@@ -40,6 +52,7 @@ export async function createWorkspace(req: Request, res: Response) {
 // loadWorkspace already checked ownership; req.workspace.id is safe to use.
 export async function renameWorkspace(req: Request, res: Response) {
   const { name } = nameSchema.parse(req.body);
+  await assertNameFree(req.user!.id, name, req.workspace!.id);
 
   const { data, error } = await supabase
     .from('workspaces')
@@ -47,7 +60,7 @@ export async function renameWorkspace(req: Request, res: Response) {
     .eq('id', req.workspace!.id)
     .select()
     .single();
-  if (error?.code === UNIQUE_VIOLATION) throw new HttpError(409, DUPLICATE_NAME);
+  if (error?.code === UNIQUE_VIOLATION) throw duplicateName(name);
   if (error) throw error;
 
   res.json(data);

@@ -10,6 +10,16 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().min(1),
   // Chunks and queries must use the same model; changing it means re-embedding everything.
   GEMINI_EMBED_MODEL: z.string().min(1).default('gemini-embedding-001'),
+  // Free-tier quota for GEMINI_EMBED_MODEL per minute (check aistudio.google.com/rate-limit).
+  // One upload may use at most 95% of it (services/uploadLimit.ts).
+  GEMINI_EMBED_RPM: z.coerce.number().int().positive().default(100),
+  GEMINI_EMBED_TPM: z.coerce.number().int().positive().default(30_000),
+  GEMINI_CHAT_MODEL: z.string().min(1).default('gemini-3.6-flash'),
+  // Used after retries on the primary fail with 429/5xx/timeout (DESIGN §6).
+  GEMINI_CHAT_FALLBACK_MODEL: z.string().min(1).default('gemini-3.5-flash-lite'),
+  // Chunks scoring below this are left out of the prompt. It filters chunks;
+  // it never decides whether the LLM is called (hard rule 7).
+  SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.62),
 });
 
 const parsed = envSchema.safeParse(process.env);

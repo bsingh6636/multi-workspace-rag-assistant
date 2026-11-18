@@ -3,6 +3,7 @@ import express from 'express';
 import { config } from './config';
 import { errorHandler } from './middleware/error';
 import apiRouter from './routes';
+import { failInterruptedWork } from './services/recovery';
 
 const app = express();
 
@@ -29,6 +30,22 @@ app.get('/{*splat}', (_req, res) => {
 // Must be registered last so it catches errors from everything above.
 app.use(errorHandler);
 
-app.listen(config.PORT, () => {
-  console.log(`Server listening on port ${config.PORT}`);
-});
+// Clean up answers/uploads a previous run left half-done, then start listening.
+// Cleanup runs first so it can't touch requests this run is handling. If it
+// fails (e.g. the DB is unreachable), log it and start anyway.
+async function start() {
+  try {
+    const { answers, uploads } = await failInterruptedWork();
+    console.log(
+      `Startup cleanup: marked ${answers} interrupted answer(s) and ${uploads} interrupted upload(s) as failed`,
+    );
+  } catch (err) {
+    console.error('Startup cleanup failed:', err instanceof Error ? err.message : err);
+  }
+
+  app.listen(config.PORT, () => {
+    console.log(`Server listening on port ${config.PORT}`);
+  });
+}
+
+start();

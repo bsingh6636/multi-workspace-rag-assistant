@@ -7,13 +7,13 @@ type Props = {
   onDelete: () => void
 }
 
-// "…" menu next to the workspace title with Rename and Delete.
-// Delete is disabled (with the reason shown) when it's the user's only workspace.
+// "…" menu in the header, right after the workspace switcher, with Rename and Delete
+// for the active workspace. Delete is disabled (with the reason shown) when it's the
+// user's only workspace.
 export default function WorkspaceMenu({ canDelete, onRename, onDelete }: Props) {
   return (
     <Popover
-      align="right"
-      buttonClassName="btn btn-icon"
+      buttonClassName="btn btn-invisible btn-icon"
       buttonLabel="Workspace settings"
       button={<KebabHorizontalIcon />}
     >
