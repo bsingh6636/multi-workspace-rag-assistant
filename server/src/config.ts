@@ -8,6 +8,8 @@ const envSchema = z.object({
   SUPABASE_URL: z.url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   GEMINI_API_KEY: z.string().min(1),
+  // Optional: a key from another Google account, used when GEMINI_API_KEY's quota runs out.
+  GEMINI_API_KEY_FALLBACK: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
   // Chunks and queries must use the same model; changing it means re-embedding everything.
   GEMINI_EMBED_MODEL: z.string().min(1).default('gemini-embedding-001'),
   // Free-tier quota for GEMINI_EMBED_MODEL per minute (check aistudio.google.com/rate-limit).

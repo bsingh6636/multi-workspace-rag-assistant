@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { ai, withRetry } from './gemini';
+import { withKeys } from './gemini';
 
 // Must match vector(768) in sql/schema.sql and match_chunks.sql.
 export const EMBEDDING_DIM = 768;
@@ -17,8 +17,9 @@ export async function embedTexts(texts: string[], taskType: EmbedTaskType): Prom
 
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
     const batch = texts.slice(i, i + BATCH_SIZE);
-    const res = await withRetry(() =>
-      ai.models.embedContent({
+    // Same model on either key, so the vectors are in the same space.
+    const res = await withKeys(config.GEMINI_EMBED_MODEL, (client) =>
+      client.models.embedContent({
         model: config.GEMINI_EMBED_MODEL,
         contents: batch,
         config: { taskType, outputDimensionality: EMBEDDING_DIM },

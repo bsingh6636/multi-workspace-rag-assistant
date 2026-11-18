@@ -9,7 +9,7 @@ import {
   type Tool,
 } from '@google/genai';
 import { config } from '../config';
-import { ai, isRetryable, withRetry } from './gemini';
+import { clientFor, isRetryable, withKeys, withRetry, type GeminiKey } from './gemini';
 
 export type LlmRequest = {
   systemInstruction: string;
@@ -18,9 +18,10 @@ export type LlmRequest = {
   // 'NONE' keeps the tools declared but makes the model answer in text
   // (the last round of the tool loop).
   toolMode?: 'AUTO' | 'NONE';
-  // Pins the call to one model. Later rounds of a tool loop use the model that
-  // answered the first round (see services/toolLoop.ts).
+  // Pins the call to one model and key. Later rounds of a tool loop use the
+  // model and key that answered the first round (see services/toolLoop.ts).
   model?: string;
+  key?: GeminiKey;
 };
 
 export type LlmResult = {
@@ -30,6 +31,7 @@ export type LlmResult = {
   text: string;
   functionCalls: FunctionCall[];
   model: string; // which model answered (primary or fallback)
+  key: GeminiKey; // which API key it ran on
   tokensIn: number | null;
   tokensOut: number | null;
 };
@@ -82,19 +84,26 @@ export function blockReasonOf(res: Pick<GenerateContentResponse, 'promptFeedback
 // If it is still rate-limited or overloaded, the fallback model gets one try
 // (DESIGN §6). Errors like a bad key (400/403) fail at once on the primary.
 export async function generate(req: LlmRequest): Promise<LlmResult> {
-  if (req.model) return await withRetry(() => callModel(req.model!, req));
+  if (req.model) {
+    const key = req.key ?? 'primary';
+    return await withRetry(() => callModel(req.model!, key, req));
+  }
 
+  const primary = config.GEMINI_CHAT_MODEL;
+  const fallback = config.GEMINI_CHAT_FALLBACK_MODEL;
   try {
-    return await withRetry(() => callModel(config.GEMINI_CHAT_MODEL, req));
+    // The primary model on each key (primary key first), with retries.
+    return await withKeys(primary, (_client, key) => callModel(primary, key, req));
   } catch (err) {
     if (!isRetryable(err)) throw err;
-    console.warn(`${config.GEMINI_CHAT_MODEL} unavailable after retries; trying ${config.GEMINI_CHAT_FALLBACK_MODEL}`);
-    return await callModel(config.GEMINI_CHAT_FALLBACK_MODEL, req);
+    console.warn(`${primary} unavailable on every key; trying ${fallback}`);
+    // The fallback model gets one try per key.
+    return await withKeys(fallback, (_client, key) => callModel(fallback, key, req), { retry: false });
   }
 }
 
-async function callModel(model: string, req: LlmRequest): Promise<LlmResult> {
-  const res = await ai.models.generateContent({
+async function callModel(model: string, key: GeminiKey, req: LlmRequest): Promise<LlmResult> {
+  const res = await clientFor(key).models.generateContent({
     model,
     contents: req.contents,
     config: {
@@ -127,6 +136,7 @@ async function callModel(model: string, req: LlmRequest): Promise<LlmResult> {
     text,
     functionCalls,
     model,
+    key,
     tokensIn: res.usageMetadata?.promptTokenCount ?? null,
     tokensOut: res.usageMetadata?.candidatesTokenCount ?? null,
   };

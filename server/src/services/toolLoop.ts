@@ -1,4 +1,5 @@
 import type { Content, FunctionCall, Part, Tool } from '@google/genai';
+import type { GeminiKey } from './gemini';
 import type { LlmRequest, LlmResult } from './llm';
 
 // More calls than this in one reply aren't run (they get an error instead),
@@ -32,7 +33,8 @@ export async function runToolLoop(input: {
   execute: (call: FunctionCall, rejectReason?: string) => Promise<Record<string, unknown>>;
 }): Promise<LoopResult> {
   const contents = [...input.contents];
-  let model: string | undefined; // pinned after the first reply
+  let model: string | undefined; // pinned after the first reply…
+  let key: GeminiKey | undefined; // …together with the API key it ran on
   const toolCalls: FunctionCall[] = [];
   let tokensIn = 0;
   let tokensOut = 0;
@@ -44,10 +46,12 @@ export async function runToolLoop(input: {
       contents,
       tools: input.tools,
       toolMode: lastRound ? 'NONE' : 'AUTO',
-      // One model for the whole turn: thought signatures belong to the model that wrote them.
+      // One model (and key) for the whole turn: thought signatures belong to the model that wrote them.
       model,
+      key,
     });
     model = reply.model;
+    key = reply.key;
     tokensIn += reply.tokensIn ?? 0;
     tokensOut += reply.tokensOut ?? 0;
 

@@ -143,6 +143,7 @@ function fakeModel(replies: Partial<LlmResult>[]) {
       text: '',
       functionCalls,
       model: 'fake-model',
+      key: 'fallback',
       tokensIn: 10,
       tokensOut: 2,
       ...reply,
@@ -201,6 +202,8 @@ describe('runToolLoop', () => {
     // The first reply's model answers the rest of the turn.
     assert.equal(model.requests[0].model, undefined);
     assert.equal(model.requests[1].model, 'fake-model');
+    assert.equal(model.requests[0].key, undefined);
+    assert.equal(model.requests[1].key, 'fallback'); // the key is pinned with the model
   });
 
   test('after maxRounds of tool calls, a last call must answer in text', async () => {
