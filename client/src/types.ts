@@ -74,7 +74,14 @@ export type Message = {
 /** POST /api/workspaces/:wsId/chats/:chatId/messages */
 export type SendResult = { userMessage: Message; assistantMessage: Message }
 
-/** GET /api/workspaces/:wsId/tasks (newest first). Created by the save_task tool. */
+/**
+ * One page of a list endpoint (documents, tasks, tool calls), newest first.
+ * Pass nextCursor back as ?cursor= for the next page; null means no more.
+ * total is only sent with the first page.
+ */
+export type Page<T> = { items: T[]; nextCursor: string | null; total: number | null }
+
+/** GET /api/workspaces/:wsId/tasks (paged, newest first). Created by the save_task tool. */
 export type Task = {
   id: string
   workspace_id: string
@@ -87,7 +94,7 @@ export type Task = {
 
 export type ToolCallStatus = 'success' | 'invalid_args' | 'unknown_tool' | 'error'
 
-/** GET /api/workspaces/:wsId/tool-calls (newest 200, newest first). */
+/** GET /api/workspaces/:wsId/tool-calls (paged, newest first; ?failed=true for failures only). */
 export type ToolCallRow = {
   id: string
   workspace_id: string

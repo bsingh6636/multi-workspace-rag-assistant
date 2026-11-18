@@ -92,7 +92,8 @@ Priority if time runs short: Parts 0–4 are the core of the grade, 5–6 are re
 - [ ] Add the deployed URL to Supabase **Authentication → URL Configuration → Redirect URLs**
 - [ ] Fill in the live URL and demo login in `README.md`, and update anything that changed
 - [ ] `.env.example` is complete
-- [ ] **Pagination check (user reminder):** review the lists that can grow (documents, chats, tool-call log, tasks) and make sure each endpoint has a `limit` or pagination, so a big workspace doesn't load everything at once. Message pagination inside a chat stays out of scope (CLAUDE.md)
+- [x] **Pagination check (user reminder):** review the lists that can grow (documents, chats, tool-call log, tasks) and make sure each endpoint has a `limit` or pagination, so a big workspace doesn't load everything at once. Message pagination inside a chat stays out of scope (CLAUDE.md)
+  - Done early (2026-11-18): documents, tasks and the tool-call log use cursor paging with Load more (`docs/plans/pagination.md`). The chat sidebar is left unpaged (sorted by a computed last-message time; one small row per chat).
 - [ ] `AI_NOTES.md` (about one page): tools and models used, how the work was split, 2–3 decisions of your own, the hardest AI bug (from `AI_CHANGE_LOG.md` ⚠ entries), and improvements. Mention the HNSW and filter trade-off
 - [ ] Final check of the whole demo on the live URL
 

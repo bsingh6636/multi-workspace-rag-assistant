@@ -2,21 +2,30 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { DOCUMENT_COLUMNS, supabase } from '../db';
 import { HttpError } from '../lib/httpError';
+import { olderThan, parsePage, toPage } from '../lib/pagination';
 import { ingestDocument } from '../services/ingest';
 
 // All handlers run after loadWorkspace, so req.workspace is the caller's own
 // workspace. Every query is scoped by req.workspace.id.
 
-// GET /api/workspaces/:wsId/documents: newest first.
+// GET /api/workspaces/:wsId/documents?limit=&cursor=: newest first, one page
+// at a time (lib/pagination.ts).
 export async function listDocuments(req: Request, res: Response) {
-  const { data, error } = await supabase
+  const page = parsePage(req.query);
+
+  let query = supabase
     .from('documents')
-    .select(DOCUMENT_COLUMNS)
+    .select(DOCUMENT_COLUMNS, { count: page.after ? undefined : 'exact' })
     .eq('workspace_id', req.workspace!.id)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(page.limit + 1);
+  if (page.after) query = query.or(olderThan(page.after));
+
+  const { data, count, error } = await query;
   if (error) throw error;
 
-  res.json(data);
+  res.json(toPage(data, page.limit, count));
 }
 
 // POST /api/workspaces/:wsId/documents  (multipart, field "file")

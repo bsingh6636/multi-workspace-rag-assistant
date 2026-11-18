@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react'
+import { useRef, useState, type DragEvent } from 'react'
 import { FileIcon, TrashIcon, UploadIcon } from '@primer/octicons-react'
 import { toast } from 'sonner'
-import { deleteRequest, errorMessage, getRequest, postRequest } from '../lib/http'
+import { deleteRequest, errorMessage, postRequest } from '../lib/http'
+import { usePagedList } from '../lib/useList'
 import type { DocumentRow, DocumentStatus, UploadResult } from '../types'
 import DeleteDocumentDialog from './DeleteDocumentDialog'
+import LoadMore from './ui/LoadMore'
 import RowsSkeleton from './ui/RowsSkeleton'
 
 // Same limits as the server (server/src/middleware/upload.ts). Checked here only
@@ -12,26 +14,18 @@ const ACCEPT = '.txt,.md,.pdf'
 const ALLOWED_EXTENSIONS = ['.txt', '.md', '.pdf']
 const MAX_BYTES = 5 * 1024 * 1024
 
-// Documents in the active workspace: list, upload (button or drag-and-drop) and
-// delete. Dashboard renders it with key={workspaceId}, so switching workspaces
+// Documents in the active workspace: list (newest first, a page at a time),
+// upload (button or drag-and-drop) and delete. Dashboard renders it with key={workspaceId}, so switching workspaces
 // mounts a fresh panel and the previous workspace's list never shows.
 export default function DocumentsPanel({ workspaceId }: { workspaceId: string }) {
-  const [documents, setDocuments] = useState<DocumentRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
   const [uploading, setUploading] = useState<string[]>([]) // filenames in progress
   const [dragging, setDragging] = useState(false)
   const [toDelete, setToDelete] = useState<DocumentRow | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const base = `/workspaces/${workspaceId}/documents`
-
-  useEffect(() => {
-    getRequest<DocumentRow[]>(base)
-      .then(setDocuments)
-      .catch((e) => setLoadError(errorMessage(e)))
-      .finally(() => setLoading(false))
-  }, [base])
+  const list = usePagedList<DocumentRow>(base)
+  const { rows: documents, setRows: setDocuments, total, setTotal, loading, error: loadError } = list
 
   // Uploads one file at a time: each one is chunked and embedded on the server
   // inside the request, and parallel uploads would only compete for rate limits.
@@ -57,7 +51,9 @@ export default function DocumentsPanel({ workspaceId }: { workspaceId: string })
           toast.success(`Added “${file.name}” (${plural(document.chunk_count, 'chunk')})`)
         }
         // Replace the row if it's already listed, otherwise add it at the top.
+        // A duplicate is an existing document, so the total only grows for a new one.
         setDocuments((list) => [document, ...list.filter((d) => d.id !== document.id)])
+        if (!duplicate) setTotal((n) => n + 1)
       } catch (e) {
         toast.error(`Couldn't upload “${file.name}”: ${errorMessage(e)}`)
       } finally {
@@ -70,6 +66,7 @@ export default function DocumentsPanel({ workspaceId }: { workspaceId: string })
     if (!toDelete) return
     await deleteRequest(`${base}/${toDelete.id}`)
     setDocuments((list) => list.filter((d) => d.id !== toDelete.id))
+    setTotal((n) => Math.max(0, n - 1))
     toast.success(`Deleted “${toDelete.filename}”`)
     setToDelete(null)
   }
@@ -98,7 +95,7 @@ export default function DocumentsPanel({ workspaceId }: { workspaceId: string })
     >
       <header className="box-header">
         <h2>
-          Documents {!loading && <span className="counter">{documents.length}</span>}
+          Documents {!loading && <span className="counter">{total}</span>}
         </h2>
         <button type="button" className="btn btn-sm" onClick={() => fileInput.current?.click()}>
           <UploadIcon />
@@ -172,6 +169,15 @@ export default function DocumentsPanel({ workspaceId }: { workspaceId: string })
           </li>
         ))}
       </ul>
+
+      <LoadMore
+        shown={documents.length}
+        total={total}
+        noun="documents"
+        hasMore={list.hasMore}
+        loading={list.loadingMore}
+        onLoadMore={list.loadMore}
+      />
 
       {toDelete && (
         <DeleteDocumentDialog document={toDelete} onConfirm={deleteDocument} onClose={() => setToDelete(null)} />

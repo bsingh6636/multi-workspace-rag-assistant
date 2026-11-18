@@ -125,13 +125,15 @@ All routes need `Authorization: Bearer <jwt>`. Every route under `/workspaces/:w
 | PATCH, DELETE | `/api/workspaces/:wsId` | Rename or delete a workspace |
 | GET | `/api/profile` | Current user and `last_workspace_id`. On first call it creates the profile and a "Default" workspace |
 | PATCH | `/api/profile` | Save `last_workspace_id` (must be a workspace you own) |
-| GET, POST | `/api/workspaces/:wsId/documents` | List or upload documents |
+| GET, POST | `/api/workspaces/:wsId/documents` | List (paged, see below) or upload documents |
 | DELETE | `/api/workspaces/:wsId/documents/:id` | Delete a document and its chunks |
 | GET, POST | `/api/workspaces/:wsId/chats` | List or create chats |
 | GET, POST | `/api/workspaces/:wsId/chats/:id/messages` | Get history or send a message |
-| GET | `/api/workspaces/:wsId/tool-calls` | Tool-call log |
-| GET | `/api/workspaces/:wsId/tasks` | Tasks created by tools |
+| GET | `/api/workspaces/:wsId/tool-calls` | Tool-call log (paged; `?failed=true` for failures only) |
+| GET | `/api/workspaces/:wsId/tasks` | Tasks created by tools (paged) |
 | GET | `/health` | Health check for the keep-alive ping |
+
+**Paged lists** (documents, tasks, tool calls) take `?limit=` (1–100, default 25) and `?cursor=`, and return `{ items, nextCursor, total }`, newest first. Send `nextCursor` back as `?cursor=` for the next page; `null` means there are no more. It's cursor (keyset) paging on `(created_at, id)`, so rows added meanwhile never shift a page. The UI shows a **Load more** button.
 
 ---
 

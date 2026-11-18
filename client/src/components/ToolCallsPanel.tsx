@@ -1,11 +1,9 @@
 import { useState } from 'react'
 import { CheckCircleFillIcon, SyncIcon, ToolsIcon, XCircleFillIcon } from '@primer/octicons-react'
-import { useList } from '../lib/useList'
+import { usePagedList } from '../lib/useList'
 import type { ToolCallRow, ToolCallStatus } from '../types'
+import LoadMore from './ui/LoadMore'
 import RowsSkeleton from './ui/RowsSkeleton'
-
-// Same cap as the server (server/src/controllers/toolCall.controller.ts).
-const LOG_LIMIT = 200
 
 const FAILED_LABELS: Record<Exclude<ToolCallStatus, 'success'>, string> = {
   invalid_args: 'Invalid arguments',
@@ -13,18 +11,22 @@ const FAILED_LABELS: Record<Exclude<ToolCallStatus, 'success'>, string> = {
   error: 'Error',
 }
 
-// Every tool call the model asked for in the active workspace, newest first,
-// including failures (bad arguments, unknown tools, errors). Each row expands to
+// Every tool call the model asked for in the active workspace, newest first and
+// a page at a time, including failures (bad arguments, unknown tools, errors).
+// "Failed only" asks the server for failures (?failed=true), so paging and the
+// count cover all of them, not just the rows loaded so far. Each row expands to
 // the full arguments and result. Dashboard renders it with key={workspaceId}.
 export default function ToolCallsPanel({ workspaceId }: { workspaceId: string }) {
-  const { rows, loading, refreshing, error, refresh } = useList<ToolCallRow>(`/workspaces/${workspaceId}/tool-calls`)
   const [failedOnly, setFailedOnly] = useState(false)
-  const shown = failedOnly ? rows.filter((c) => c.status !== 'success') : rows
+  const list = usePagedList<ToolCallRow>(
+    `/workspaces/${workspaceId}/tool-calls${failedOnly ? '?failed=true' : ''}`,
+  )
+  const { rows: shown, total, loading, refreshing, error, refresh } = list
 
   return (
     <section className="box panel">
       <header className="box-header">
-        <h2>Tool calls {!loading && <span className="counter">{shown.length}</span>}</h2>
+        <h2>Tool calls {!loading && <span className="counter">{total}</span>}</h2>
         <div className="box-header-actions">
           <label className="checkbox-label">
             <input type="checkbox" checked={failedOnly} onChange={(e) => setFailedOnly(e.target.checked)} />
@@ -48,7 +50,7 @@ export default function ToolCallsPanel({ workspaceId }: { workspaceId: string })
       {!loading && !error && shown.length === 0 && (
         <div className="blankslate">
           <ToolsIcon size={24} />
-          <h3>{failedOnly && rows.length > 0 ? 'No failed tool calls' : 'No tool calls yet'}</h3>
+          <h3>{failedOnly ? 'No failed tool calls' : 'No tool calls yet'}</h3>
           <p className="muted">Calls appear here when the assistant saves a task, lists tasks or posts to Discord.</p>
         </div>
       )}
@@ -59,7 +61,14 @@ export default function ToolCallsPanel({ workspaceId }: { workspaceId: string })
         ))}
       </ul>
 
-      {rows.length >= LOG_LIMIT && <p className="box-footer muted">Showing the newest {LOG_LIMIT} calls.</p>}
+      <LoadMore
+        shown={shown.length}
+        total={total}
+        noun={failedOnly ? 'failed calls' : 'calls'}
+        hasMore={list.hasMore}
+        loading={list.loadingMore}
+        onLoadMore={list.loadMore}
+      />
     </section>
   )
 }

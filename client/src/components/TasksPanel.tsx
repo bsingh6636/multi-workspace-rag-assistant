@@ -1,19 +1,21 @@
 import { ChecklistIcon, SyncIcon } from '@primer/octicons-react'
-import { useList } from '../lib/useList'
+import { usePagedList } from '../lib/useList'
 import type { Task } from '../types'
+import LoadMore from './ui/LoadMore'
 import RowsSkeleton from './ui/RowsSkeleton'
 
-// Tasks in the active workspace, newest first. They're created by the assistant
+// Tasks in the active workspace, newest first, a page at a time. They're created by the assistant
 // (the save_task tool), so this list is read-only. Dashboard renders it with
 // key={workspaceId}, so another workspace's tasks never show here.
 export default function TasksPanel({ workspaceId }: { workspaceId: string }) {
-  const { rows: tasks, loading, refreshing, error, refresh } = useList<Task>(`/workspaces/${workspaceId}/tasks`)
+  const list = usePagedList<Task>(`/workspaces/${workspaceId}/tasks`)
+  const { rows: tasks, total, loading, refreshing, error, refresh } = list
   const today = localDate()
 
   return (
     <section className="box panel">
       <header className="box-header">
-        <h2>Tasks {!loading && <span className="counter">{tasks.length}</span>}</h2>
+        <h2>Tasks {!loading && <span className="counter">{total}</span>}</h2>
         <button type="button" className="btn btn-sm" onClick={refresh} disabled={loading || refreshing}>
           <SyncIcon />
           {refreshing ? 'Refreshing…' : 'Refresh'}
@@ -51,6 +53,15 @@ export default function TasksPanel({ workspaceId }: { workspaceId: string }) {
           </li>
         ))}
       </ul>
+
+      <LoadMore
+        shown={tasks.length}
+        total={total}
+        noun="tasks"
+        hasMore={list.hasMore}
+        loading={list.loadingMore}
+        onLoadMore={list.loadMore}
+      />
     </section>
   )
 }

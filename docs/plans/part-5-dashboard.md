@@ -48,7 +48,7 @@ So Part 5 is two new tabs plus checks.
   - the arguments on one line, cut with "…" (full text on hover).
   - the error in red when there is one.
   - A native `<details>` per row expands the full arguments and result as formatted JSON. No state needed, keyboard works.
-- The server returns the newest 200 rows. When exactly 200 come back, a note under the list says older calls aren't shown (pagination is out of scope; noted for the Part 8 reminder).
+- ~~The server returns the newest 200 rows, with a note at the cap.~~ Replaced by cursor paging with Load more and a server-side "Failed only" filter (`docs/plans/pagination.md`).
 - Empty state: "No tool calls yet", or "No failed tool calls" when the filter is on.
 
 ### Shared behaviour
@@ -93,5 +93,5 @@ No change. Both routes run behind `requireAuth` and `loadWorkspace`, so `:wsId` 
   - One check failed on the first run because of a bug in my test, not the app. The unknown-tool row's error text lists "list_tasks", which my "no list_tasks row from B" check matched. The check now looks at the tool name only.
 - **Also in this part:** `useList` (load plus refresh) and `RowsSkeleton` are shared. The documents panel now uses the shared skeleton instead of its own copy.
 - **Known limits:**
-  - Tool calls show the newest 200, and a note appears at the cap. Tasks have no limit yet. Both are listed in the Part 8 pagination reminder.
+  - Documents, tasks and tool calls are paged (25 at a time, Load more). See `docs/plans/pagination.md`.
   - Tasks are read-only by design.

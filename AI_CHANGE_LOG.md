@@ -458,3 +458,16 @@ Entry format:
 - **Testing (live Gemini, tool calls faked, nothing saved or posted):** 8 phrasings. Reminders after 5 min and on Friday, "don't let me forget X and Y tomorrow" (two save_task calls, one per task), "add stretch to my to-do list", "list all my tasks" (limit 50), "what is due today?" and "post … at 6pm" ("I can't do that.") all behaved as intended.
   - ⚠ AI mistake found by that test: my first Discord wording ("Not for questions about Discord ('can you post?')") made "can you post to discord?" get a free-text "Yes, I can…" instead of the fixed "What should I post…" reply. It competed with the prompt rule that already handles this, so I removed it. Re-run: "can you post to discord?" → the fixed reply, "post … at 6pm" → "I can't do that.", "post hello team to discord" → posted (faked).
   - Unit tests: 85 pass.
+
+## 2026-11-18 08:07 IST: "Load more" pagination for documents, tasks and the tool-call log
+- **Files:** `docs/plans/pagination.md`, `server/src/lib/pagination.ts`, `server/src/controllers/document.controller.ts`, `server/src/controllers/task.controller.ts`, `server/src/controllers/toolCall.controller.ts`, `server/test/pagination.test.ts`, `client/src/lib/useList.ts`, `client/src/components/ui/LoadMore.tsx`, `client/src/components/DocumentsPanel.tsx`, `client/src/components/TasksPanel.tsx`, `client/src/components/ToolCallsPanel.tsx`, `client/src/types.ts`, `client/src/index.css`, `docs/DESIGN.md`, `PLAN.md`, `README.md`, `docs/plans/part-5-dashboard.md`
+- **What:**
+  - The three list endpoints return `{ items, nextCursor, total }` in pages of 25 (`?limit=`, max 100). They use cursor paging on `(created_at, id)`, newest first.
+  - The client shows "Showing X of Y" and a "Load more" button.
+  - The tool-call "Failed only" filter moves to the server (`?failed=true`).
+  - Tasks no longer load without a limit, and the tool-call log's fixed cap of 200 is gone.
+- **Why:** The user asked whether the lists needed pagination, then asked for "Load more" on documents and tasks (and the tool-call log), researched and built properly. Cursor paging over OFFSET: rows keep arriving, so offset pages would repeat or skip a row, and it uses the existing `(workspace_id, created_at desc)` indexes. Details in `docs/plans/pagination.md`. This is the Part 8 pagination check, done early.
+- **Testing:**
+  - Unit: 9 new tests in `server/test/pagination.test.ts` (cursor round-trip; bad limit; foreign or crafted cursors, including attempts to add a `workspace_id` or `id` condition to the filter, are rejected with 400; slicing and `nextCursor`). 94 server tests pass. Client and server type-check.
+  - Live, read-only against Supabase: a script called the three real controller functions with `limit=3` and followed `nextCursor` to the end. Documents (5 rows, 2 pages), tasks (6 rows, 2 pages) and tool calls (23 rows, 8 pages) matched one full ordered query exactly, with no duplicates and `total` only on page 1. A bad cursor got 400. `failed=true` couldn't be checked on real rows, because the database has no failed tool calls; it returned an empty first page with total 0.
+  - Not done: clicking Load more in the browser.

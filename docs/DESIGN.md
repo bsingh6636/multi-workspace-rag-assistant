@@ -270,6 +270,17 @@ otherwise               → success, { result }
 - **Interrupted work (server stopped mid-request):** a crash, restart or deploy between "row saved as `pending`/`processing`" and "row marked done/failed" would leave it stuck forever (endless "Thinking…"; a stuck document even blocks re-upload as a "duplicate"). On startup, before listening, `services/recovery.ts` marks every `pending` message and `processing` document `failed` and deletes that document's partial chunks, so Retry / re-upload work. This is safe because the app is one process: at startup nothing is really in progress. A SIGTERM handler was rejected because it doesn't run on crashes, `kill -9` or out-of-memory kills. With several instances this would need a per-row timeout instead.
 - Every route is wrapped in try/catch, followed by a JSON error. Stack traces and env values are never returned to the client.
 
+## 6a. Paged lists
+
+Documents, tasks and the tool-call log are paged with a cursor, not OFFSET (`lib/pagination.ts`, plan in `docs/plans/pagination.md`).
+
+- Request: `?limit=` (1–100, default 25), `?cursor=`. Response: `{ items, nextCursor, total }`, newest first.
+- A page is "rows older than the last row you have", comparing `(created_at, id)`. `id` breaks ties between rows with the same timestamp. A row added while you page doesn't shift anything, which OFFSET would do. Each page is one range scan on the `(workspace_id, created_at desc)` index.
+- The cursor is `base64url(JSON [created_at, id])`, opaque to the client. zod checks it (ISO timestamp + uuid) before it goes into the PostgREST `.or()` filter, so a crafted cursor is a 400 and can't change the filter. The workspace filter still comes from the URL and `loadWorkspace` (hard rule 1).
+- `limit + 1` rows are fetched to know whether there's a next page. `total` (`count: 'exact'`) is only sent with the first page, because later pages are narrowed by the cursor. The client keeps it and adjusts it after its own upload or delete.
+- `tool-calls?failed=true` filters on the server, so "Failed only" pages and counts across all failures, not just the loaded rows.
+- Not paged: the chat sidebar (sorted by each chat's newest message, a computed value) and messages inside a chat (out of scope).
+
 ## 6b. Server code layout and errors
 
 - `routes/index.ts` builds one `apiRouter`: `apiRouter.use(requireAuth)` runs first for every API route, then each resource router is mounted (`/profile`, `/workspaces`, later `/workspaces/:wsId/documents` …). `index.ts` only does `app.use('/api', apiRouter)`. Auth is on the API router, not app-wide, because `/health` and the React files must stay public.
