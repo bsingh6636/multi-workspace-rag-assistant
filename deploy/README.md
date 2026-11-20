@@ -12,7 +12,7 @@ The service is described in [`render.yaml`](../render.yaml) (a Render "Blueprint
 |---|---|
 | GitHub | The repo. Each push to `main` rebuilds and redeploys |
 | Render | Builds `Dockerfile`, runs the container, holds the env variables, serves HTTPS |
-| Cloudflare DNS | `CNAME workspace-ai → multi-workspace-rag-assistant.onrender.com`, **DNS only** (grey cloud) |
+| Cloudflare DNS | `CNAME workspace-ai → multi-workspace-rag-assistant-h6jr.onrender.com`, **DNS only** (grey cloud) |
 | Supabase | Site URL and Redirect URLs set to `https://workspace-ai.brijeshhq.com` |
 
 ---
@@ -48,12 +48,12 @@ The service is described in [`render.yaml`](../render.yaml) (a Render "Blueprint
 - **Don't set `PORT`.** Render sets it, and `config.ts` reads it.
 - **Changing env variables later:** use the service's **Environment** tab in the dashboard. Render asks for `sync: false` values only when the Blueprint is first created.
 
-**Check:** the service URL `https://multi-workspace-rag-assistant.onrender.com/health` returns `{"ok":true}`. (If Render added a suffix to the name, use the URL shown on the service page.)
+**Check:** the service URL `https://multi-workspace-rag-assistant-h6jr.onrender.com/health` returns `{"ok":true}`. Render adds a random suffix when the plain name is taken, so use the URL shown on the service page.
 
 ### 2. Custom domain
 
 1. Render → the service → **Settings** → **Custom Domains** → add `workspace-ai.brijeshhq.com`.
-2. Cloudflare → DNS → add `CNAME  workspace-ai  multi-workspace-rag-assistant.onrender.com`, set to **DNS only** (grey cloud).
+2. Cloudflare → DNS → add `CNAME  workspace-ai  multi-workspace-rag-assistant-h6jr.onrender.com`, set to **DNS only** (grey cloud).
 3. Back in Render, click **Verify**. Render then issues the HTTPS certificate on its own.
 
 - **Why grey:** Render has to see the domain point straight at it to verify the domain and issue the certificate. With the orange cloud, Cloudflare sits in between and adds its own HTTPS layer, which is a second thing to configure.

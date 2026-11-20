@@ -765,3 +765,8 @@ Entry format:
 - **Files:** `render.yaml`, `deploy/README.md`
 - **What:** The Render service is named `multi-workspace-rag-assistant` (the name the dashboard filled in from the repo), so its URL is `multi-workspace-rag-assistant.onrender.com`. The docs and the CNAME target use that name now. `deploy/README.md` also covers the manual "New Web Service" flow the user followed: add the env variables with "Add from .env", and set the health check path under Advanced.
 - **Why:** The user's screenshot of the Render setup page showed this name, not the `workspace-assistant` the docs used.
+
+## 2026-11-19 01:27 IST: Real Render hostname in the deploy docs
+- **Files:** `deploy/README.md`
+- **What:** The service's Render URL is `multi-workspace-rag-assistant-h6jr.onrender.com`. Render added a suffix because the plain name was already taken by someone else's service. The CNAME target and the health-check URL in the docs now use it.
+- **Why:** After the user said it was live, a check showed the plain `multi-workspace-rag-assistant.onrender.com` answering with another app's error message, while `workspace-ai.brijeshhq.com` resolved to the `-h6jr` host and returned `{"ok":true}`. **⚠ AI mistake:** the earlier docs assumed the name without a suffix.
